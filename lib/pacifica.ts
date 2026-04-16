@@ -51,7 +51,7 @@ export function keypairFromBase58(privateKey: string): Keypair {
 let _demoKeypair: Keypair | null = null
 export function getDemoKeypair(): Keypair | null {
   if (_demoKeypair) return _demoKeypair
-  const pk = process.env.PACIFICA_DEMO_PRIVATE_KEY
+  const pk = process.env.PACIFICA_DEMO_PRIVATE_KEY?.trim()
   if (!pk) return null
   try {
     _demoKeypair = keypairFromBase58(pk)
