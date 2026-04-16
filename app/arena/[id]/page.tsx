@@ -49,6 +49,18 @@ function fmtBig(n: number): string {
 function pnlClass(v: number) { return v >= 0 ? 'profit' : 'loss' }
 function pnlPrefix(v: number) { return v >= 0 ? '+' : '' }
 
+// Ocean rank based on ROI %
+function oceanRank(roi: number): { emoji: string; title: string } {
+  if (roi >= 10)  return { emoji: '🐙', title: 'KRAKEN' }
+  if (roi >= 5)   return { emoji: '🐋', title: 'WHALE' }
+  if (roi >= 2)   return { emoji: '🦈', title: 'SHARK' }
+  if (roi >= 0.5) return { emoji: '🐬', title: 'DOLPHIN' }
+  if (roi >= 0)   return { emoji: '🐟', title: 'FISH' }
+  if (roi >= -2)  return { emoji: '🦀', title: 'CRAB' }
+  if (roi >= -5)  return { emoji: '🦐', title: 'SHRIMP' }
+  return            { emoji: '🪸', title: 'REEF' }
+}
+
 // ── Price history hook ────────────────────────────────────────────────────────
 
 const MAX_TICKS = 80
@@ -99,70 +111,114 @@ function usePriceHistory(prices: Record<string, number>, symbol: string) {
   return snap
 }
 
-// ── SVG Price Chart ───────────────────────────────────────────────────────────
+// ── Tide Gauge (ocean-themed price + position visual) ─────────────────────────
 
-const PriceChart = memo(function PriceChart({
-  ticks, entryPrices, symbol,
+function tideLabel(pct: number): { label: string; emoji: string; color: string } {
+  if (pct >= 5)  return { label: 'TSUNAMI',    emoji: '🌊🌊', color: 'var(--profit)' }
+  if (pct >= 2)  return { label: 'HIGH TIDE',  emoji: '🌊',   color: 'var(--profit)' }
+  if (pct >= 0.5) return { label: 'RISING',    emoji: '🐟',   color: 'var(--profit)' }
+  if (pct > -0.5) return { label: 'CALM SEA',  emoji: '⛵',   color: 'var(--teal)'   }
+  if (pct > -2)  return { label: 'EBBING',     emoji: '🦀',   color: 'var(--loss)'   }
+  if (pct > -5)  return { label: 'LOW TIDE',   emoji: '🪸',   color: 'var(--loss)'   }
+  return               { label: 'SHIPWRECK',   emoji: '☠️',   color: 'var(--loss)'   }
+}
+
+const TideGauge = memo(function TideGauge({
+  ticks, symbol, entryPrices, currentPrice,
 }: {
   ticks: PriceTick[]
-  entryPrices: { price: number; side: 'bid' | 'ask' }[]
   symbol: string
+  entryPrices: { price: number; side: 'bid' | 'ask' }[]
+  currentPrice: number
 }) {
-  const W = 420, H = 90, PAD = 6
+  const firstP = ticks[0]?.p ?? currentPrice
+  const lastP  = currentPrice || ticks[ticks.length - 1]?.p || 0
+  const sessionChangePct = firstP > 0 ? ((lastP - firstP) / firstP) * 100 : 0
+  const tide = tideLabel(sessionChangePct)
 
-  if (ticks.length < 2) {
-    return (
-      <div className="flex items-center justify-center text-xs font-black tracking-widest"
-        style={{ height: H, background: 'var(--surface-2)', color: 'var(--text-dim)', borderBottom: '2px solid #000' }}>
-        LIVE CHART LOADING...
-      </div>
-    )
+  // Session high/low since arena opened
+  const sessionPrices = ticks.map(t => t.p)
+  const sessionHigh = sessionPrices.length ? Math.max(...sessionPrices, lastP) : lastP
+  const sessionLow  = sessionPrices.length ? Math.min(...sessionPrices, lastP) : lastP
+
+  // Best position for this symbol (if any)
+  const myBest = entryPrices[0]
+  let posPnlPct = 0
+  if (myBest && myBest.price > 0) {
+    posPnlPct = myBest.side === 'bid'
+      ? ((lastP - myBest.price) / myBest.price) * 100
+      : ((myBest.price - lastP) / myBest.price) * 100
   }
 
-  const prices = ticks.map(t => t.p)
-  const allPrices = [...prices, ...entryPrices.map(e => e.price)]
-  const minP = Math.min(...allPrices) * 0.9995
-  const maxP = Math.max(...allPrices) * 1.0005
-  const range = maxP - minP || 1
-
-  const px = (i: number) => PAD + (i / (ticks.length - 1)) * (W - PAD * 2)
-  const py = (p: number) => PAD + (1 - (p - minP) / range) * (H - PAD * 2)
-
-  const linePath = ticks.map((t, i) => `${i === 0 ? 'M' : 'L'}${px(i).toFixed(1)},${py(t.p).toFixed(1)}`).join(' ')
-  const lastP = prices[prices.length - 1]
-  const firstP = prices[0]
-  const trend = lastP >= firstP ? 'var(--profit)' : 'var(--loss)'
-
-  // Area fill path
-  const areaPath = linePath + ` L${px(ticks.length - 1).toFixed(1)},${H} L${PAD},${H} Z`
-
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', borderBottom: '2px solid #000', background: 'var(--surface-2)' }} preserveAspectRatio="none">
-      {/* Area fill */}
-      <path d={areaPath} fill={trend} fillOpacity="0.06" />
-      {/* Entry price lines */}
-      {entryPrices.map((ep, i) => {
-        const y = py(ep.price).toFixed(1)
-        const color = ep.side === 'bid' ? 'var(--profit)' : 'var(--loss)'
-        return (
-          <g key={i}>
-            <line x1={PAD} y1={y} x2={W - PAD} y2={y}
-              stroke={color} strokeWidth="1" strokeDasharray="4,3" />
-            <text x={W - PAD - 2} y={Number(y) - 2} fontSize="7" fill={color} textAnchor="end" fontWeight="bold">
-              {ep.side === 'bid' ? '▲' : '▼'} {fmtPrice(ep.price, symbol)}
-            </text>
-          </g>
-        )
-      })}
-      {/* Price line */}
-      <path d={linePath} stroke={trend} strokeWidth="1.5" fill="none" strokeLinejoin="round" />
-      {/* Current price dot */}
-      <circle cx={px(ticks.length - 1).toFixed(1)} cy={py(lastP).toFixed(1)} r="2.5" fill={trend} />
-      {/* Current price label */}
-      <text x={px(ticks.length - 1) - 3} y={py(lastP) - 4} fontSize="7.5" fill={trend} textAnchor="end" fontWeight="bold">
-        {fmtPrice(lastP, symbol)}
-      </text>
-    </svg>
+    <div style={{ borderBottom: '2px solid #000', background: 'var(--surface-2)', position: 'relative', overflow: 'hidden' }}>
+      {/* Animated wave background */}
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full" style={{ opacity: 0.08, pointerEvents: 'none' }}>
+        <defs>
+          <linearGradient id="wave-gradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={tide.color} stopOpacity="0.6" />
+            <stop offset="1" stopColor={tide.color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path fill="url(#wave-gradient)">
+          <animate attributeName="d" dur="6s" repeatCount="indefinite"
+            values="M0,60 Q50,40 100,60 T200,60 T300,60 T400,60 L400,100 L0,100 Z;
+                    M0,60 Q50,80 100,60 T200,60 T300,60 T400,60 L400,100 L0,100 Z;
+                    M0,60 Q50,40 100,60 T200,60 T300,60 T400,60 L400,100 L0,100 Z" />
+        </path>
+      </svg>
+
+      <div className="relative px-4 py-3">
+        {/* Symbol + price + tide label */}
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-black tracking-wider" style={{ color: 'var(--teal)' }}>🌊 {symbol}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5" style={{
+                background: tide.color, color: '#000', border: '1px solid #000',
+                boxShadow: '2px 2px 0px #000', fontSize: '9px',
+              }}>
+                {tide.emoji} {tide.label}
+              </span>
+            </div>
+            <div className="text-xl font-black mt-1 font-mono" style={{ color: 'var(--text)' }}>
+              ${fmtPrice(lastP, symbol)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>SESSION</div>
+            <div className="text-sm font-black" style={{ color: tide.color }}>
+              {sessionChangePct >= 0 ? '▲' : '▼'}{Math.abs(sessionChangePct).toFixed(2)}%
+            </div>
+          </div>
+        </div>
+
+        {/* High / Low row */}
+        <div className="grid grid-cols-3 gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+          <div>
+            <div style={{ fontSize: '10px' }}>HIGH</div>
+            <div className="font-mono font-bold" style={{ color: 'var(--profit)' }}>${fmtPrice(sessionHigh, symbol)}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '10px' }}>LOW</div>
+            <div className="font-mono font-bold" style={{ color: 'var(--loss)' }}>${fmtPrice(sessionLow, symbol)}</div>
+          </div>
+          {myBest ? (
+            <div>
+              <div style={{ fontSize: '10px' }}>YOUR POS</div>
+              <div className="font-mono font-bold" style={{ color: posPnlPct >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                {posPnlPct >= 0 ? '+' : ''}{posPnlPct.toFixed(2)}%
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: '10px' }}>TICKS</div>
+              <div className="font-mono font-bold" style={{ color: 'var(--teal)' }}>{ticks.length}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 })
 
@@ -445,7 +501,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
             <div className="p-5 mb-4" style={{ background: 'var(--surface-2)', border: '2px solid var(--gold)', boxShadow: '4px 4px 0px #000' }}>
               <div className="text-xs font-black tracking-wider mb-1" style={{ color: 'var(--gold)' }}>WINNER</div>
+              <div className="text-4xl mb-1" title={oceanRank(displayWinner.roi).title}>{oceanRank(displayWinner.roi).emoji}</div>
               <div className="text-2xl font-black mb-1" style={{ color: 'var(--text)' }}>{displayWinner.displayName}</div>
+              <div className="text-xs font-black tracking-[0.2em] mb-2" style={{ color: 'var(--gold)' }}>
+                {oceanRank(displayWinner.roi).title}
+              </div>
               <div className="text-3xl font-black" style={{ color: displayWinner.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
                 {pnlPrefix(displayWinner.totalPnl)}{displayWinner.totalPnl.toFixed(2)} USDC
               </div>
@@ -453,22 +513,29 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </div>
 
             <div className="nb-card overflow-hidden mb-4">
-              {leaderboard.map((e, i) => (
-                <div key={e.userId} className="flex items-center gap-3 px-4 py-3"
-                  style={{
-                    borderBottom: i < leaderboard.length - 1 ? '2px solid #000' : undefined,
-                    background: e.userId === userId ? 'rgba(0,200,224,0.08)' : undefined,
-                  }}>
-                  <span className="font-black w-6 text-center" style={{
-                    color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
-                  }}>#{e.rank}</span>
-                  <span className="flex-1 font-bold text-sm truncate">{e.displayName}</span>
-                  <span className="font-black text-sm" style={{ color: e.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
-                    {pnlPrefix(e.totalPnl)}{e.totalPnl.toFixed(2)}
-                  </span>
-                  <span className="text-xs w-14 text-right" style={{ color: 'var(--text-muted)' }}>{e.roi.toFixed(1)}%</span>
-                </div>
-              ))}
+              {leaderboard.map((e, i) => {
+                const rank = oceanRank(e.roi)
+                return (
+                  <div key={e.userId} className="flex items-center gap-3 px-4 py-3"
+                    style={{
+                      borderBottom: i < leaderboard.length - 1 ? '2px solid #000' : undefined,
+                      background: e.userId === userId ? 'rgba(0,200,224,0.08)' : undefined,
+                    }}>
+                    <span className="font-black w-6 text-center" style={{
+                      color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
+                    }}>#{e.rank}</span>
+                    <span className="text-lg" title={rank.title}>{rank.emoji}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-sm truncate">{e.displayName}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{rank.title}</div>
+                    </div>
+                    <span className="font-black text-sm" style={{ color: e.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                      {pnlPrefix(e.totalPnl)}{e.totalPnl.toFixed(2)}
+                    </span>
+                    <span className="text-xs w-14 text-right" style={{ color: 'var(--text-muted)' }}>{e.roi.toFixed(1)}%</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -582,28 +649,34 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             {leaderboard.length === 0 ? (
               <div className="text-center text-xs py-8" style={{ color: 'var(--text-dim)' }}>No traders yet</div>
             ) : (
-              leaderboard.map((entry, i) => (
-                <div key={entry.userId} className="px-3 py-2"
-                  style={{
-                    borderBottom: '2px solid #000',
-                    background: entry.userId === userId ? 'rgba(0,200,224,0.06)' : undefined,
-                    borderLeft: entry.userId === userId ? '3px solid var(--teal)' : undefined,
-                  }}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-black text-xs w-4" style={{
-                      color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
-                    }}>#{entry.rank}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold truncate">{entry.displayName}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{entry.positionCount} open</div>
+              leaderboard.map((entry, i) => {
+                const rank = oceanRank(entry.roi)
+                return (
+                  <div key={entry.userId} className="px-3 py-2"
+                    style={{
+                      borderBottom: '2px solid #000',
+                      background: entry.userId === userId ? 'rgba(0,200,224,0.06)' : undefined,
+                      borderLeft: entry.userId === userId ? '3px solid var(--teal)' : undefined,
+                    }}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-xs w-4" style={{
+                        color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
+                      }}>#{entry.rank}</span>
+                      <span className="text-base" title={rank.title}>{rank.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate">{entry.displayName}</div>
+                        <div className="text-xs font-black tracking-wider" style={{ color: 'var(--text-dim)', fontSize: '9px' }}>
+                          {rank.title} · {entry.positionCount} open
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs font-black mt-0.5" style={{ color: entry.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                      {pnlPrefix(entry.totalPnl)}{entry.totalPnl.toFixed(2)}
+                      <span className="font-normal ml-1" style={{ color: 'var(--text-muted)' }}>({entry.roi.toFixed(1)}%)</span>
                     </div>
                   </div>
-                  <div className="text-xs font-black mt-0.5" style={{ color: entry.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
-                    {pnlPrefix(entry.totalPnl)}{entry.totalPnl.toFixed(2)}
-                    <span className="font-normal ml-1" style={{ color: 'var(--text-muted)' }}>({entry.roi.toFixed(1)}%)</span>
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
           <button onClick={() => router.push('/leaderboard')}
@@ -665,10 +738,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             })}
           </div>
 
-          {/* Live Price Chart */}
-          <PriceChart
+          {/* Ocean-themed Tide Gauge */}
+          <TideGauge
             ticks={priceHistory}
             symbol={symbol}
+            currentPrice={prices[symbol] ?? 0}
             entryPrices={myPositions
               .filter(p => p.symbol === symbol)
               .map(p => ({ price: p.entryPrice, side: p.side }))}

@@ -9,7 +9,7 @@ function isValidPrivyAppId(id: string | undefined): boolean {
 }
 
 export default function PrivyWrapper({ children }: { children: React.ReactNode }) {
-  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID
+  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim()
 
   if (!isValidPrivyAppId(appId)) {
     return <>{children}</>

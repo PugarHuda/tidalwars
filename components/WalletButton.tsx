@@ -46,7 +46,7 @@ export default function WalletButton({ onConnected }: { onConnected?: (address: 
   const [show, setShow] = useState(false)
 
   useEffect(() => {
-    const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? ''
+    const appId = (process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim()
     setShow(/^c[lm][a-z0-9]{20,}$/.test(appId) && appId !== 'your-privy-app-id-here')
   }, [])
 
