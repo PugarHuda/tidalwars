@@ -3,6 +3,12 @@ import { usePrivy } from '@privy-io/react-auth'
 import { Wallet, LogOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+const PRIVY_APP_ID = (process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim()
+const PRIVY_ENABLED =
+  PRIVY_APP_ID.length >= 20 &&
+  /^c[lm]/.test(PRIVY_APP_ID) &&
+  PRIVY_APP_ID !== 'your-privy-app-id-here'
+
 function PrivyInner({ onConnected }: { onConnected?: (address: string) => void }) {
   const { ready, authenticated, login, logout, user } = usePrivy()
   const addr: string = user?.wallet?.address ?? ''
@@ -18,7 +24,13 @@ function PrivyInner({ onConnected }: { onConnected?: (address: string) => void }
     }
   }, [authenticated, addr, onConnected])
 
-  if (!ready) return <div className="nb-btn nb-btn-ghost py-1.5 px-4 opacity-40 pointer-events-none animate-pulse" style={{ width: 120 }} />
+  if (!ready) {
+    return (
+      <button disabled className="nb-btn nb-btn-ghost py-1.5 px-4 text-xs opacity-60">
+        <Wallet className="w-3.5 h-3.5" /> Loading...
+      </button>
+    )
+  }
 
   if (authenticated && addr) {
     return (
@@ -43,13 +55,26 @@ function PrivyInner({ onConnected }: { onConnected?: (address: string) => void }
 }
 
 export default function WalletButton({ onConnected }: { onConnected?: (address: string) => void }) {
-  const [show, setShow] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
-  useEffect(() => {
-    const appId = (process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '').trim()
-    setShow(/^c[lm][a-z0-9]{20,}$/.test(appId) && appId !== 'your-privy-app-id-here')
-  }, [])
+  // Pre-hydration: render a disabled placeholder so layout doesn't shift
+  if (!mounted) {
+    return (
+      <button disabled className="nb-btn nb-btn-ghost py-1.5 px-4 text-xs opacity-40">
+        <Wallet className="w-3.5 h-3.5" /> Connect Wallet
+      </button>
+    )
+  }
 
-  if (!show) return null
+  if (!PRIVY_ENABLED) {
+    return (
+      <button disabled className="nb-btn nb-btn-ghost py-1.5 px-4 text-xs opacity-60"
+        title="Set NEXT_PUBLIC_PRIVY_APP_ID in env to enable wallet connect">
+        <Wallet className="w-3.5 h-3.5" /> Wallet Disabled
+      </button>
+    )
+  }
+
   return <PrivyInner onConnected={onConnected} />
 }
