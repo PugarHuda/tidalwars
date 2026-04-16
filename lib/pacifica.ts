@@ -73,8 +73,6 @@ export async function placeMarketOrder(params: {
   clientOrderId: string
 }): Promise<{ success: boolean; orderId?: string; error?: string; raw?: unknown }> {
   try {
-    // Note: builder_code requires prior approval via /account/builder_code.
-    // Disabled for now until approval flow is wired for the demo account.
     const payload: Record<string, unknown> = {
       symbol: params.symbol,
       side: params.side,
@@ -82,6 +80,7 @@ export async function placeMarketOrder(params: {
       reduce_only: params.reduceOnly ?? false,
       slippage_percent: params.slippagePercent ?? '1',
       client_order_id: params.clientOrderId,
+      ...(BUILDER_CODE ? { builder_code: BUILDER_CODE } : {}),
     }
 
     const body = buildSignedBody('create_market_order', payload, params.keypair)
