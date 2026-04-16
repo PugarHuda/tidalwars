@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trophy, Clock, Users, Zap, Globe, Wifi, WifiOff, Waves } from 'lucide-react'
+import { Trophy, Clock, Users, Zap, Globe, Wifi, WifiOff, Waves, ChevronRight } from 'lucide-react'
 import { Competition } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
 import { usePacificaWs } from '@/lib/pacificaWs'
@@ -22,12 +22,16 @@ export default function Home() {
   const [name, setName] = useState('')
   const [duration, setDuration] = useState(30)
   const [displayName, setDisplayName] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [globalStats, setGlobalStats] = useState<{ totalTraders: number; globalTrades: number; totalCompetitions: number } | null>(null)
 
   const { tickers, wsConnected } = usePacificaWs()
 
   useEffect(() => {
+    // Pre-fill display name from localStorage
+    const saved = localStorage.getItem('displayName')
+    if (saved) setDisplayName(saved)
+
     fetch('/api/competitions').then(r => r.json()).then(setCompetitions).catch(() => {})
     fetch('/api/leaderboard/global').then(r => r.json()).then(d => setGlobalStats(d.stats)).catch(() => {})
     const interval = setInterval(() => {
@@ -38,11 +42,11 @@ export default function Home() {
 
   async function handleCreate() {
     if (!name.trim() || !displayName.trim()) return
-    setLoading(true)
+    setCreating(true)
     try {
       const userId = `user_${Math.random().toString(36).slice(2, 9)}`
       localStorage.setItem('userId', userId)
-      localStorage.setItem('displayName', displayName)
+      localStorage.setItem('displayName', displayName.trim())
 
       const res = await fetch('/api/competitions', {
         method: 'POST',
@@ -54,19 +58,21 @@ export default function Home() {
       await fetch(`/api/competitions/${comp.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, displayName }),
+        body: JSON.stringify({ userId, displayName: displayName.trim() }),
       })
 
       router.push(`/arena/${comp.id}`)
     } finally {
-      setLoading(false)
+      setCreating(false)
     }
   }
 
-  async function handleJoin(compId: string) {
-    const dn = displayName || prompt('Enter your display name:') || 'Anon'
-    setDisplayName(dn)
-
+  // handleJoin: displayName='' means just view (for ended comps)
+  async function handleJoin(compId: string, dn: string) {
+    if (!dn) {
+      router.push(`/arena/${compId}`)
+      return
+    }
     let userId = localStorage.getItem('userId')
     if (!userId) {
       userId = `user_${Math.random().toString(36).slice(2, 9)}`
@@ -95,7 +101,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Waves className="w-6 h-6" style={{ color: 'var(--teal)' }} />
             <span className="text-xl font-black tracking-tight" style={{ color: 'var(--teal)' }}>TIDAL</span>
-            <span className="text-xl font-black tracking-tight text-white">WARS</span>
+            <span className="text-xl font-black tracking-tight" style={{ color: 'var(--text)' }}>WARS</span>
           </div>
           <div className="nb-btn nb-btn-ghost text-xs py-1 px-2 pointer-events-none" style={{ fontSize: '10px', letterSpacing: '0.1em' }}>
             <Zap className="w-2.5 h-2.5" /> TESTNET
@@ -158,7 +164,6 @@ export default function Home() {
         <div className="mb-10">
           <div className="nb-card-glow mb-4 p-8"
             style={{ borderColor: 'var(--teal)', boxShadow: 'var(--nb-shadow-teal)', position: 'relative', overflow: 'hidden' }}>
-            {/* Ocean gradient overlay */}
             <div style={{
               position: 'absolute', inset: 0, pointerEvents: 'none',
               background: 'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(0,216,245,0.08) 0%, transparent 70%)',
@@ -168,9 +173,7 @@ export default function Home() {
                 style={{ background: 'var(--teal-bg)', border: '1px solid var(--teal)', color: 'var(--teal)' }}>
                 <Waves className="w-3 h-3" /> PVP PERPETUALS ON PACIFICA DEX
               </div>
-              <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-4 leading-none" style={{
-                textShadow: '4px 4px 0px #000'
-              }}>
+              <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-4 leading-none" style={{ textShadow: '4px 4px 0px #000' }}>
                 <span style={{ color: 'var(--teal)' }}>TIDAL</span>
                 <span style={{ color: 'var(--text)' }}> WARS</span>
               </h1>
@@ -224,6 +227,7 @@ export default function Home() {
                 placeholder="e.g. Deep Sea Showdown"
                 value={name}
                 onChange={e => setName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreate()}
               />
             </div>
             <div>
@@ -235,10 +239,14 @@ export default function Home() {
           </div>
           <button
             onClick={handleCreate}
-            disabled={loading || !name.trim() || !displayName.trim()}
+            disabled={creating || !name.trim() || !displayName.trim()}
             className="nb-btn nb-btn-primary w-full py-3 text-sm"
           >
-            {loading ? '...' : '⚡ LAUNCH & ENTER ARENA'}
+            {creating ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin inline-block">◌</span> LAUNCHING...
+              </span>
+            ) : '⚡ LAUNCH & ENTER ARENA'}
           </button>
         </div>
 
@@ -253,19 +261,23 @@ export default function Home() {
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {active.map(comp => <CompCard key={comp.id} comp={comp} onJoin={handleJoin} />)}
+              {active.map(comp => (
+                <CompCard key={comp.id} comp={comp} onJoin={handleJoin} />
+              ))}
             </div>
           </div>
         )}
 
         {/* ── Ended Competitions ───────────────────────────────────────────── */}
         {ended.length > 0 && (
-          <div className="opacity-60">
+          <div className="opacity-70">
             <div className="text-sm font-black tracking-widest uppercase mb-4" style={{ color: 'var(--text-muted)' }}>
               Past Competitions
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {ended.map(comp => <CompCard key={comp.id} comp={comp} onJoin={handleJoin} ended />)}
+              {ended.map(comp => (
+                <CompCard key={comp.id} comp={comp} onJoin={handleJoin} ended />
+              ))}
             </div>
           </div>
         )}
@@ -299,20 +311,56 @@ export default function Home() {
   )
 }
 
-function CompCard({ comp, onJoin, ended }: {
+// ── CompCard ──────────────────────────────────────────────────────────────────
+
+function CompCard({
+  comp,
+  onJoin,
+  ended,
+}: {
   comp: Competition
-  onJoin: (id: string) => void
+  onJoin: (id: string, displayName: string) => Promise<void>
   ended?: boolean
 }) {
   const count = Object.keys(comp.participants).length
-  const timeLeft = Math.max(0, comp.endsAt - Date.now())
+  const [timeLeft, setTimeLeft] = useState(Math.max(0, comp.endsAt - Date.now()))
+  const [joining, setJoining] = useState(false)
+  const [nameInput, setNameInput] = useState(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem('displayName') ?? '') : ''
+  )
+  const nameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (ended) return
+    const t = setInterval(() => setTimeLeft(Math.max(0, comp.endsAt - Date.now())), 1000)
+    return () => clearInterval(t)
+  }, [comp.endsAt, ended])
+
   const minutes = Math.floor(timeLeft / 60000)
   const seconds = Math.floor((timeLeft % 60000) / 1000)
 
+  async function handleJoinClick() {
+    if (joining) return
+    const dn = nameInput.trim()
+    if (!dn) {
+      nameRef.current?.focus()
+      nameRef.current?.select()
+      return
+    }
+    setJoining(true)
+    await onJoin(comp.id, dn)
+    // navigation happens inside onJoin, component unmounts
+  }
+
   return (
     <div className="nb-card hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#000] transition-all overflow-hidden"
-      style={{ boxShadow: 'var(--nb-shadow)', borderTopColor: ended ? 'var(--border-soft)' : 'var(--teal)', borderTopWidth: 3 }}>
-      {/* Top accent bar */}
+      style={{
+        boxShadow: 'var(--nb-shadow)',
+        borderTopColor: ended ? 'var(--border-soft)' : 'var(--teal)',
+        borderTopWidth: 3,
+      }}>
+
+      {/* Card header */}
       <div className="px-4 pt-4 pb-3">
         <div className="flex items-start justify-between mb-2">
           <h3 className="font-black text-sm leading-tight pr-2" style={{ color: 'var(--text)' }}>{comp.name}</h3>
@@ -332,22 +380,62 @@ function CompCard({ comp, onJoin, ended }: {
           <span className="flex items-center gap-1.5">
             <Clock className="w-3 h-3" style={{ color: ended ? 'var(--text-muted)' : 'var(--gold)' }} />
             <span style={{ color: ended ? 'var(--text-muted)' : 'var(--gold)', fontWeight: 700 }}>
-              {ended ? 'Ended' : `${minutes}m ${seconds.toString().padStart(2, '0')}s`}
+              {ended ? 'Ended' : timeLeft === 0 ? 'Ending...' : `${minutes}m ${seconds.toString().padStart(2, '0')}s`}
             </span>
           </span>
         </div>
       </div>
-      <div className="px-4 pb-3 text-xs" style={{ color: 'var(--text-dim)', borderBottom: '1px solid var(--border-soft)' }}>
-        $10,000 USDC virtual · max 10x leverage · Pacifica testnet
+
+      <div className="px-4 pb-3 text-xs" style={{ color: 'var(--text-dim)', borderBottom: '2px solid #000' }}>
+        $10,000 USDC virtual · max {comp.maxLeverage}x leverage · Pacifica testnet
       </div>
+
+      {/* Join section */}
       <div className="p-3">
-        <button
-          onClick={() => onJoin(comp.id)}
-          disabled={!!ended}
-          className={`nb-btn w-full py-2.5 text-xs ${ended ? 'nb-btn-ghost' : 'nb-btn-primary'}`}
-        >
-          {ended ? 'VIEW RESULTS' : '⚡ JOIN ARENA'}
-        </button>
+        {ended ? (
+          /* VIEW RESULTS — always clickable */
+          <button
+            onClick={() => onJoin(comp.id, '')}
+            className="nb-btn nb-btn-ghost w-full py-2.5 text-xs flex items-center justify-center gap-2"
+          >
+            <Trophy className="w-3.5 h-3.5" style={{ color: 'var(--gold)' }} />
+            VIEW RESULTS
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        ) : (
+          /* JOIN form */
+          <div className="flex flex-col gap-2">
+            <div className="relative">
+              <input
+                ref={nameRef}
+                type="text"
+                className="nb-input text-xs"
+                placeholder="Enter your name to join..."
+                value={nameInput}
+                onChange={e => setNameInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleJoinClick()}
+                maxLength={20}
+              />
+              {nameInput.trim() && (
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold"
+                  style={{ color: 'var(--teal)', pointerEvents: 'none' }}>
+                  ✓
+                </span>
+              )}
+            </div>
+            <button
+              onClick={handleJoinClick}
+              disabled={joining}
+              className="nb-btn nb-btn-primary w-full py-2.5 text-xs"
+            >
+              {joining ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="animate-spin inline-block">◌</span> JOINING...
+                </span>
+              ) : nameInput.trim() ? `⚡ JOIN AS ${nameInput.trim().toUpperCase().slice(0, 12)}` : '⚡ JOIN ARENA'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

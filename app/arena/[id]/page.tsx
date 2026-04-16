@@ -55,19 +55,41 @@ interface PriceTick { t: number; p: number }
 
 function usePriceHistory(prices: Record<string, number>, symbol: string) {
   const historyRef = useRef<Record<string, PriceTick[]>>({})
+  const pricesRef  = useRef(prices)
   const [snap, setSnap] = useState<PriceTick[]>([])
 
+  // Keep ref current so the interval always sees latest prices
+  useEffect(() => { pricesRef.current = prices }, [prices])
+
+  // Add tick on every price change
   useEffect(() => {
     const price = prices[symbol]
     if (!price || price <= 0) return
     if (!historyRef.current[symbol]) historyRef.current[symbol] = []
     const arr = historyRef.current[symbol]
     const last = arr[arr.length - 1]
-    if (last && last.p === price) return // dedupe
-    arr.push({ t: Date.now(), p: price })
+    const now = Date.now()
+    if (last && last.p === price && now - last.t < 2000) return
+    arr.push({ t: now, p: price })
     if (arr.length > MAX_TICKS) arr.shift()
     setSnap([...arr])
   }, [prices, symbol])
+
+  // Force-tick every 3s so chart fills even when price is static
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const price = pricesRef.current[symbol]
+      if (!price || price <= 0) return
+      if (!historyRef.current[symbol]) historyRef.current[symbol] = []
+      const arr = historyRef.current[symbol]
+      const last = arr[arr.length - 1]
+      if (last && last.p === price && Date.now() - last.t < 2500) return
+      arr.push({ t: Date.now(), p: price })
+      if (arr.length > MAX_TICKS) arr.shift()
+      setSnap(a => [...a.slice(-(MAX_TICKS - 1)), { t: Date.now(), p: price }])
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [symbol]) // stable — only reset when symbol changes
 
   return snap
 }
@@ -148,6 +170,7 @@ function useCompetitionStream(id: string) {
   const [feed, setFeed] = useState<TradeEvent[]>([])
   const [restPrices, setRestPrices] = useState<Record<string, number>>({})
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [loadError, setLoadError] = useState(false)
   const esRef = useRef<EventSource | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const [connected, setConnected] = useState(false)
@@ -179,6 +202,7 @@ function useCompetitionStream(id: string) {
           const msg: SsePayload = JSON.parse(e.data)
           if (msg.type === 'competition') setComp(msg.data as Competition)
           if (msg.type === 'feed') setFeed(msg.data as TradeEvent[])
+          if (msg.type === 'error') pollRest() // competition not found on this instance
           if (msg.type === 'prices') {
             const prices = msg.data as Record<string, number>
             setRestPrices(prices)
@@ -198,7 +222,14 @@ function useCompetitionStream(id: string) {
     return () => { esRef.current?.close(); clearInterval(pollingRef.current) }
   }, [id, pollRest, fetchLeaderboard])
 
-  return { comp, feed, restPrices, leaderboard, sseConnected: connected }
+  // Show load error after 12 seconds with no competition data
+  useEffect(() => {
+    if (comp) return
+    const t = setTimeout(() => setLoadError(true), 12000)
+    return () => clearTimeout(t)
+  }, [comp])
+
+  return { comp, feed, restPrices, leaderboard, sseConnected: connected, loadError }
 }
 
 // ── Elfa AI Trending hook ─────────────────────────────────────────────────────
@@ -233,12 +264,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const { id } = use(params)
   const router = useRouter()
 
-  const { comp, feed, restPrices, leaderboard, sseConnected } = useCompetitionStream(id)
+  const { comp, feed, restPrices, leaderboard, sseConnected, loadError } = useCompetitionStream(id)
   const { tickers, wsConnected } = usePacificaWs()
   const { tokens: elfaTokens, enabled: elfaEnabled } = useElfaTrending()
 
   const [settled, setSettled] = useState(false)
-  const [winner, setWinner] = useState<LeaderboardEntry | null>(null)
   const [timeLeft, setTimeLeft] = useState(0)
 
   const [symbol, setSymbol] = useState('BTC')
@@ -271,13 +301,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     if (settled) return
     setSettled(true)
     try {
-      const res = await fetch(`/api/competitions/${id}`, {
+      await fetch(`/api/competitions/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'settle', prices: settlePrices }),
       })
-      const data = await res.json()
-      if (data.final?.length > 0) setWinner(data.final[0])
     } catch { /* ignore */ }
   }, [id, settled])
 
@@ -334,15 +362,43 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
   if (!comp) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
-      <div className="nb-card px-8 py-6 text-center">
-        <Waves className="w-8 h-8 mx-auto mb-3 animate-pulse" style={{ color: 'var(--teal)' }} />
-        <div className="font-black text-sm tracking-widest" style={{ color: 'var(--teal)' }}>LOADING ARENA...</div>
+      <div className="nb-card px-8 py-6 text-center" style={{ maxWidth: 360 }}>
+        {loadError ? (
+          <>
+            <div className="text-2xl mb-3">⚠️</div>
+            <div className="font-black text-sm tracking-widest mb-2" style={{ color: 'var(--loss)' }}>ARENA NOT FOUND</div>
+            <div className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+              The competition may have expired or is on a different server instance.
+            </div>
+            <button onClick={() => router.push('/')} className="nb-btn nb-btn-ghost w-full py-2">
+              ← Back to Home
+            </button>
+          </>
+        ) : (
+          <>
+            <Waves className="w-8 h-8 mx-auto mb-3 animate-pulse" style={{ color: 'var(--teal)' }} />
+            <div className="font-black text-sm tracking-widest" style={{ color: 'var(--teal)' }}>LOADING ARENA...</div>
+            <div className="text-xs mt-2" style={{ color: 'var(--text-dim)' }}>Connecting to competition...</div>
+          </>
+        )}
       </div>
     </div>
   )
 
-  // ── Winner screen ─────────────────────────────────────────────────────────
-  if (isEnded && winner && leaderboard.length > 0) {
+  // ── Winner screen — shown as soon as leaderboard is available after end ──
+  const displayWinner = leaderboard[0] ?? null
+  if (isEnded && leaderboard.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="nb-card px-8 py-6 text-center" style={{ borderColor: 'var(--gold)' }}>
+          <Trophy className="w-8 h-8 mx-auto mb-3 animate-pulse" style={{ color: 'var(--gold)' }} />
+          <div className="font-black text-sm tracking-widest" style={{ color: 'var(--gold)' }}>CALCULATING RESULTS...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isEnded && displayWinner) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8" style={{ background: 'var(--bg)' }}>
         <div className="max-w-lg w-full">
@@ -354,11 +410,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
             <div className="p-5 mb-4" style={{ background: 'var(--surface-2)', border: '2px solid var(--gold)', boxShadow: '4px 4px 0px #000' }}>
               <div className="text-xs font-black tracking-wider mb-1" style={{ color: 'var(--gold)' }}>WINNER</div>
-              <div className="text-2xl font-black text-white mb-1">{winner.displayName}</div>
-              <div className="text-3xl font-black" style={{ color: winner.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
-                {pnlPrefix(winner.totalPnl)}{winner.totalPnl.toFixed(2)} USDC
+              <div className="text-2xl font-black mb-1" style={{ color: 'var(--text)' }}>{displayWinner.displayName}</div>
+              <div className="text-3xl font-black" style={{ color: displayWinner.totalPnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                {pnlPrefix(displayWinner.totalPnl)}{displayWinner.totalPnl.toFixed(2)} USDC
               </div>
-              <div className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{winner.roi.toFixed(2)}% ROI</div>
+              <div className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{displayWinner.roi.toFixed(2)}% ROI</div>
             </div>
 
             <div className="nb-card overflow-hidden mb-4">
@@ -393,7 +449,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                 const res = await fetch('/api/competitions', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ name: `${comp.name} Rematch`, creatorId: userId, durationMinutes: comp.durationMinutes }),
+                  body: JSON.stringify({ name: `${comp.name} II`, creatorId: userId, durationMinutes: comp.durationMinutes }),
                 })
                 const newComp = await res.json()
                 await fetch(`/api/competitions/${newComp.id}`, {
@@ -650,7 +706,14 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                 )}
               </div>
 
-              <button onClick={() => handleTrade('open')} disabled={tradeLoading || !userId}
+              {(prices[symbol] ?? 0) === 0 && (
+                <div className="mb-2 text-xs text-center py-1.5 px-3 font-bold"
+                  style={{ background: 'rgba(255,68,102,0.1)', border: '1px solid var(--loss)', color: 'var(--loss)' }}>
+                  ⚠ Waiting for price feed...
+                </div>
+              )}
+              <button onClick={() => handleTrade('open')}
+                disabled={tradeLoading || !userId || (prices[symbol] ?? 0) === 0}
                 className="nb-btn w-full py-3 text-sm"
                 style={{
                   background: side === 'bid' ? 'var(--profit)' : 'var(--loss)',
@@ -658,7 +721,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                   border: '2px solid #000',
                   boxShadow: 'var(--nb-shadow)',
                 }}>
-                {tradeLoading ? '...' : `${side === 'bid' ? '▲ LONG' : '▼ SHORT'} ${symbol} ${leverage}x`}
+                {tradeLoading ? '...' : (prices[symbol] ?? 0) === 0 ? 'LOADING PRICE...' : `${side === 'bid' ? '▲ LONG' : '▼ SHORT'} ${symbol} ${leverage}x`}
               </button>
 
               {tradeMsg && (
@@ -683,11 +746,13 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               </div>
               <div className="space-y-2">
                 {myPositions.map(pos => {
-                  const cur = prices[pos.symbol] ?? pos.entryPrice
-                  const priceDiff = pos.side === 'bid' ? cur - pos.entryPrice : pos.entryPrice - cur
-                  const upnl = priceDiff * pos.amount * pos.leverage
-                  const liq = liqPrice(pos)
-                  const health = posHealth(pos, cur)
+                  const cur = (prices[pos.symbol] && prices[pos.symbol] > 0) ? prices[pos.symbol] : (pos.entryPrice || 0)
+                  const ep = pos.entryPrice || 0
+                  const priceDiff = pos.side === 'bid' ? cur - ep : ep - cur
+                  const upnl = isFinite(priceDiff) && isFinite(pos.amount) && isFinite(pos.leverage)
+                    ? priceDiff * pos.amount * pos.leverage : 0
+                  const liq = ep > 0 ? liqPrice({ ...pos, entryPrice: ep }) : 0
+                  const health = ep > 0 ? posHealth({ ...pos, entryPrice: ep }, cur) : 1
                   const healthBg = health > 0.5 ? 'var(--profit)' : health > 0.25 ? 'var(--gold)' : 'var(--loss)'
                   const distPct = pos.side === 'bid'
                     ? ((cur - liq) / liq * 100)
