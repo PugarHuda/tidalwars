@@ -5,7 +5,7 @@ import { LeaderboardEntry } from '@/lib/types'
 // Prices passed as query params for simplicity (client sends current prices)
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const comp = getCompetition(id)
+  const comp = await getCompetition(id)
   if (!comp) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const pricesParam = req.nextUrl.searchParams.get('prices')

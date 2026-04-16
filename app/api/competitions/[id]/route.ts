@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const comp = getCompetition(id)
+  const comp = await getCompetition(id)
   if (!comp) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(comp)
 }
@@ -21,12 +21,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // ── Settle ──────────────────────────────────────────────────────────────────
   if (body.action === 'settle') {
     const prices: Record<string, number> = body.prices ?? {}
-    const comp = getCompetition(id)
+    const comp = await getCompetition(id)
     if (!comp) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (comp.status !== 'ended' && Date.now() < comp.endsAt) {
       return NextResponse.json({ error: 'Competition still running' }, { status: 400 })
     }
-    settleCompetition(id, Object.keys(prices).length > 0 ? prices : undefined)
+    await settleCompetition(id, Object.keys(prices).length > 0 ? prices : undefined)
     const final = Object.values(comp.participants)
       .map(p => ({ userId: p.userId, displayName: p.displayName, totalPnl: p.realizedPnl, roi: (p.realizedPnl / 10000) * 100 }))
       .sort((a, b) => b.totalPnl - a.totalPnl)
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!userId || !symbol || !side || !amount || !action) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-    const comp = getCompetition(id)
+    const comp = await getCompetition(id)
     if (!comp) return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
     if (comp.status === 'ended') return NextResponse.json({ error: 'Competition ended' }, { status: 400 })
     const participant = comp.participants[userId]
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (requiredMargin > available) {
         return NextResponse.json({ error: 'Insufficient virtual balance' }, { status: 400 })
       }
-      addParticipantPosition(id, userId, { symbol, side, entryPrice: price, amount, leverage, openedAt: Date.now(), clientOrderId: orderId })
+      await addParticipantPosition(id, userId, { symbol, side, entryPrice: price, amount, leverage, openedAt: Date.now(), clientOrderId: orderId })
 
       if (demoKeypair) {
         pacificaResult = await placeMarketOrder({
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }).catch(() => ({ success: false, error: 'Network error' }))
       }
 
-      addTradeEvent(id, {
+      await addTradeEvent(id, {
         id: randomUUID(), competitionId: id, userId,
         displayName: displayName ?? participant.displayName,
         symbol, side, amount, price, leverage, action: 'open',
@@ -87,11 +87,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     if (action === 'close') {
-      const position = removeParticipantPosition(id, userId, clientOrderId)
+      const position = await removeParticipantPosition(id, userId, clientOrderId)
       if (!position) return NextResponse.json({ error: 'Position not found' }, { status: 404 })
       const priceDiff = position.side === 'bid' ? price - position.entryPrice : position.entryPrice - price
       const pnl = priceDiff * position.amount * position.leverage
-      updateParticipantPnl(id, userId, pnl)
+      await updateParticipantPnl(id, userId, pnl)
 
       if (demoKeypair) {
         pacificaResult = await closePosition({
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }).catch(() => ({ success: false, error: 'Network error' }))
       }
 
-      addTradeEvent(id, {
+      await addTradeEvent(id, {
         id: randomUUID(), competitionId: id, userId,
         displayName: displayName ?? participant.displayName,
         symbol: position.symbol, side: position.side,
@@ -121,10 +121,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!userId || !displayName) {
     return NextResponse.json({ error: 'Missing userId or displayName' }, { status: 400 })
   }
-  const comp = getCompetition(id)
+  const comp = await getCompetition(id)
   if (!comp) return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
   if (comp.status === 'ended') return NextResponse.json({ error: 'Competition ended' }, { status: 400 })
-  const joined = joinCompetition(id, {
+  const joined = await joinCompetition(id, {
     userId, displayName, walletAddress: walletAddress ?? '',
     positions: [], realizedPnl: 0, joinedAt: Date.now(),
   })

@@ -7,7 +7,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}))
   const prices: Record<string, number> = body.prices ?? {}
 
-  const comp = getCompetition(id)
+  const comp = await getCompetition(id)
   if (!comp) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (comp.status !== 'ended') {
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  settleCompetition(id, Object.keys(prices).length > 0 ? prices : undefined)
+  await settleCompetition(id, Object.keys(prices).length > 0 ? prices : undefined)
 
   // Return final leaderboard
   const participants = Object.values(comp.participants)

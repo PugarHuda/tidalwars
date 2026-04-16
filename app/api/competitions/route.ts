@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createCompetition, getAllCompetitions } from '@/lib/store'
 
 export async function GET() {
-  const comps = getAllCompetitions()
+  const comps = await getAllCompetitions()
   return NextResponse.json(comps)
 }
 
@@ -14,6 +14,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const comp = createCompetition({ name, creatorId, durationMinutes, allowedSymbols, maxLeverage })
+  const comp = await createCompetition({ name, creatorId, durationMinutes, allowedSymbols, maxLeverage })
   return NextResponse.json(comp, { status: 201 })
 }

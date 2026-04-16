@@ -27,22 +27,22 @@ export async function GET(
         } catch { /* client disconnected */ }
       }
 
-      const push = () => {
+      const push = async () => {
         if (closed) return
-        const comp = getCompetition(id)
+        const comp = await getCompetition(id)
         if (!comp) {
           send('error', { message: 'Competition not found' })
           return
         }
         send('competition', comp)
-        send('feed', getTradeEvents(id).slice(0, 30))
+        send('feed', (await getTradeEvents(id)).slice(0, 30))
         send('prices', getLastKnownPrices())
       }
 
       // Send immediately on connection
       push()
 
-      const interval = setInterval(() => {
+      const interval = setInterval(async () => {
         if (closed) { clearInterval(interval); return }
         push()
       }, 2000)

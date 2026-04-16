@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { getAllCompetitions, getTradeEvents, STARTING_BALANCE } from '@/lib/store'
 
 export async function GET() {
-  const competitions = getAllCompetitions()
+  const competitions = await getAllCompetitions()
 
   const traderMap: Record<string, {
     userId: string
@@ -22,7 +22,7 @@ export async function GET() {
   let globalTrades = 0
 
   for (const comp of competitions) {
-    const events = getTradeEvents(comp.id)
+    const events = await getTradeEvents(comp.id)
     const participants = Object.values(comp.participants)
 
     // Global volume & trade count

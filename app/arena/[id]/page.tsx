@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, use, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, use, useMemo, useRef, memo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Trophy, TrendingUp, TrendingDown, Clock, ArrowLeft, Zap,
@@ -46,6 +46,98 @@ function fmtBig(n: number): string {
 
 function pnlClass(v: number) { return v >= 0 ? 'profit' : 'loss' }
 function pnlPrefix(v: number) { return v >= 0 ? '+' : '' }
+
+// ── Price history hook ────────────────────────────────────────────────────────
+
+const MAX_TICKS = 80
+
+interface PriceTick { t: number; p: number }
+
+function usePriceHistory(prices: Record<string, number>, symbol: string) {
+  const historyRef = useRef<Record<string, PriceTick[]>>({})
+  const [snap, setSnap] = useState<PriceTick[]>([])
+
+  useEffect(() => {
+    const price = prices[symbol]
+    if (!price || price <= 0) return
+    if (!historyRef.current[symbol]) historyRef.current[symbol] = []
+    const arr = historyRef.current[symbol]
+    const last = arr[arr.length - 1]
+    if (last && last.p === price) return // dedupe
+    arr.push({ t: Date.now(), p: price })
+    if (arr.length > MAX_TICKS) arr.shift()
+    setSnap([...arr])
+  }, [prices, symbol])
+
+  return snap
+}
+
+// ── SVG Price Chart ───────────────────────────────────────────────────────────
+
+const PriceChart = memo(function PriceChart({
+  ticks, entryPrices, symbol,
+}: {
+  ticks: PriceTick[]
+  entryPrices: { price: number; side: 'bid' | 'ask' }[]
+  symbol: string
+}) {
+  const W = 420, H = 90, PAD = 6
+
+  if (ticks.length < 2) {
+    return (
+      <div className="flex items-center justify-center text-xs font-black tracking-widest"
+        style={{ height: H, background: 'var(--surface-2)', color: 'var(--text-dim)', borderBottom: '2px solid #000' }}>
+        LIVE CHART LOADING...
+      </div>
+    )
+  }
+
+  const prices = ticks.map(t => t.p)
+  const allPrices = [...prices, ...entryPrices.map(e => e.price)]
+  const minP = Math.min(...allPrices) * 0.9995
+  const maxP = Math.max(...allPrices) * 1.0005
+  const range = maxP - minP || 1
+
+  const px = (i: number) => PAD + (i / (ticks.length - 1)) * (W - PAD * 2)
+  const py = (p: number) => PAD + (1 - (p - minP) / range) * (H - PAD * 2)
+
+  const linePath = ticks.map((t, i) => `${i === 0 ? 'M' : 'L'}${px(i).toFixed(1)},${py(t.p).toFixed(1)}`).join(' ')
+  const lastP = prices[prices.length - 1]
+  const firstP = prices[0]
+  const trend = lastP >= firstP ? 'var(--profit)' : 'var(--loss)'
+
+  // Area fill path
+  const areaPath = linePath + ` L${px(ticks.length - 1).toFixed(1)},${H} L${PAD},${H} Z`
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block', borderBottom: '2px solid #000', background: 'var(--surface-2)' }} preserveAspectRatio="none">
+      {/* Area fill */}
+      <path d={areaPath} fill={trend} fillOpacity="0.06" />
+      {/* Entry price lines */}
+      {entryPrices.map((ep, i) => {
+        const y = py(ep.price).toFixed(1)
+        const color = ep.side === 'bid' ? 'var(--profit)' : 'var(--loss)'
+        return (
+          <g key={i}>
+            <line x1={PAD} y1={y} x2={W - PAD} y2={y}
+              stroke={color} strokeWidth="1" strokeDasharray="4,3" />
+            <text x={W - PAD - 2} y={Number(y) - 2} fontSize="7" fill={color} textAnchor="end" fontWeight="bold">
+              {ep.side === 'bid' ? '▲' : '▼'} {fmtPrice(ep.price, symbol)}
+            </text>
+          </g>
+        )
+      })}
+      {/* Price line */}
+      <path d={linePath} stroke={trend} strokeWidth="1.5" fill="none" strokeLinejoin="round" />
+      {/* Current price dot */}
+      <circle cx={px(ticks.length - 1).toFixed(1)} cy={py(lastP).toFixed(1)} r="2.5" fill={trend} />
+      {/* Current price label */}
+      <text x={px(ticks.length - 1) - 3} y={py(lastP) - 4} fontSize="7.5" fill={trend} textAnchor="end" fontWeight="bold">
+        {fmtPrice(lastP, symbol)}
+      </text>
+    </svg>
+  )
+})
 
 // ── SSE hook ──────────────────────────────────────────────────────────────────
 
@@ -173,6 +265,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   }, [restPrices, tickers])
 
   const currentTicker = tickers[`${symbol}-PERP`] ?? tickers[symbol] ?? null
+  const priceHistory = usePriceHistory(prices, symbol)
 
   const triggerSettle = useCallback(async (settlePrices: Record<string, number>) => {
     if (settled) return
@@ -465,6 +558,15 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               )
             })}
           </div>
+
+          {/* Live Price Chart */}
+          <PriceChart
+            ticks={priceHistory}
+            symbol={symbol}
+            entryPrices={myPositions
+              .filter(p => p.symbol === symbol)
+              .map(p => ({ price: p.entryPrice, side: p.side }))}
+          />
 
           {/* Market stats row */}
           {currentTicker && (currentTicker.openInterest > 0 || currentTicker.volume24h > 0) && (

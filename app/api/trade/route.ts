@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const comp = getCompetition(competitionId)
+  const comp = await getCompetition(competitionId)
   if (!comp) return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
   if (comp.status === 'ended') return NextResponse.json({ error: 'Competition ended' }, { status: 400 })
 
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Track virtual position
-    addParticipantPosition(competitionId, userId, {
+    await addParticipantPosition(competitionId, userId, {
       symbol,
       side,
       entryPrice: price,
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       }).catch(() => ({ success: false, error: 'Network error' }))
     }
 
-    addTradeEvent(competitionId, {
+    await addTradeEvent(competitionId, {
       id: randomUUID(),
       competitionId,
       userId,
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'close') {
-    const position = removeParticipantPosition(competitionId, userId, clientOrderId)
+    const position = await removeParticipantPosition(competitionId, userId, clientOrderId)
     if (!position) return NextResponse.json({ error: 'Position not found' }, { status: 404 })
 
     const priceDiff = position.side === 'bid'
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       : position.entryPrice - price
     pnl = priceDiff * position.amount * position.leverage
 
-    updateParticipantPnl(competitionId, userId, pnl)
+    await updateParticipantPnl(competitionId, userId, pnl)
 
     // Close real position on Pacifica (best-effort)
     if (demoKeypair) {
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
       }).catch(() => ({ success: false, error: 'Network error' }))
     }
 
-    addTradeEvent(competitionId, {
+    await addTradeEvent(competitionId, {
       id: randomUUID(),
       competitionId,
       userId,
