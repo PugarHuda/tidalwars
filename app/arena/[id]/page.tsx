@@ -8,9 +8,11 @@ import {
 } from 'lucide-react'
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
+import SigningModal from '@/components/SigningModal'
 import { usePacificaWs } from '@/lib/pacificaWs'
 import type { TrendingToken } from '@/lib/elfa'
 import type { ChatMessage } from '@/lib/chat'
+import { ACHIEVEMENTS, loadUnlocked, saveUnlocked, type Achievement } from '@/lib/achievements'
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
@@ -390,6 +392,41 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const [tradeMode, setTradeMode] = useState<'virtual' | 'testnet'>('virtual')
   const [tradeFlash, setTradeFlash] = useState<'long' | 'short' | 'close' | null>(null)
+  const [pendingSign, setPendingSign] = useState<{
+    action: 'open' | 'close'
+    clientOrderId: string
+    symbol: string
+    side: 'bid' | 'ask'
+    amount: number
+    leverage: number
+    currentPrice: number
+  } | null>(null)
+
+  const SIGNER_PUBKEY = 'CChSvcry2rHLYquyC1WApGZ5HtsLRd3ZzV6Ji8rcARzj'
+  const BUILDER_CODE = 'TIDALWARS'
+
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set())
+  const [achievementToast, setAchievementToast] = useState<Achievement | null>(null)
+  const chatCountRef = useRef(0)
+
+  useEffect(() => { setUnlocked(loadUnlocked(id)) }, [id])
+
+  const unlock = useCallback((achId: string) => {
+    setUnlocked(prev => {
+      if (prev.has(achId)) return prev
+      const next = new Set(prev).add(achId)
+      saveUnlocked(id, next)
+      const ach = ACHIEVEMENTS[achId]
+      if (ach) setAchievementToast(ach)
+      return next
+    })
+  }, [id])
+
+  useEffect(() => {
+    if (!achievementToast) return
+    const t = setTimeout(() => setAchievementToast(null), 3500)
+    return () => clearTimeout(t)
+  }, [achievementToast])
 
   const userId = typeof window !== 'undefined' ? localStorage.getItem('userId') ?? '' : ''
   const displayName = typeof window !== 'undefined' ? localStorage.getItem('displayName') ?? 'Anon' : 'Anon'
@@ -433,17 +470,45 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     return () => clearInterval(t)
   }, [comp])
 
-  async function handleTrade(action: 'open' | 'close', clientOrderId?: string) {
+  async function handleTrade(action: 'open' | 'close', clientOrderId?: string, closePos?: Position) {
+    const currentPrice = prices[closePos?.symbol ?? symbol] ?? 0
+    const tradeSymbol = closePos?.symbol ?? symbol
+    const tradeSide = closePos?.side ?? side
+    const tradeAmount = closePos?.amount ?? parseFloat(amount)
+    const tradeLeverage = closePos?.leverage ?? leverage
+
+    // TESTNET mode with open/close — show signing modal first
+    if (tradeMode === 'testnet') {
+      setPendingSign({
+        action,
+        clientOrderId: clientOrderId ?? crypto.randomUUID(),
+        symbol: tradeSymbol,
+        side: tradeSide,
+        amount: tradeAmount,
+        leverage: tradeLeverage,
+        currentPrice,
+      })
+      return
+    }
+    await submitTrade(action, clientOrderId, tradeSymbol, tradeSide, tradeAmount, tradeLeverage, currentPrice)
+  }
+
+  async function submitTrade(
+    action: 'open' | 'close',
+    clientOrderId: string | undefined,
+    tSymbol: string, tSide: 'bid' | 'ask',
+    tAmount: number, tLeverage: number,
+    currentPrice: number,
+  ) {
     setTradeLoading(true)
     setTradeMsg('')
     try {
-      const currentPrice = prices[symbol] ?? 0
       const res = await fetch(`/api/competitions/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action, userId, displayName, symbol, side,
-          amount: parseFloat(amount), leverage, clientOrderId, currentPrice,
+          action, userId, displayName, symbol: tSymbol, side: tSide,
+          amount: tAmount, leverage: tLeverage, clientOrderId, currentPrice,
           mode: tradeMode,
         }),
       })
@@ -452,22 +517,40 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         if (action === 'open') {
           const onChain = data.pacifica?.success
           setLastPacificaId(data.pacifica?.orderId ?? null)
-          setTradeFlash(side === 'bid' ? 'long' : 'short')
+          setTradeFlash(tSide === 'bid' ? 'long' : 'short')
+
+          // Achievements on open
+          unlock('first_blood')
+          const notional = currentPrice * tAmount * tLeverage
+          if (notional >= 10000) unlock('whale_size')
+          if (tLeverage === comp?.maxLeverage) unlock('max_leverage')
+          if (elfaTokens.some(t => t.symbol === tSymbol && t.rank <= 10)) unlock('trending_trade')
+
           setTradeMsg(onChain
             ? `⬡ ORDER ON PACIFICA · ${data.pacifica.orderId?.slice(0, 10)}...`
             : tradeMode === 'testnet'
-              ? `⚡ Virtual position opened · Pacifica testnet orderbook empty`
-              : `🌊 POSITION OPENED · ${side === 'bid' ? 'LONG' : 'SHORT'} ${amount} ${symbol} @ ${leverage}x`)
+              ? `⚡ Signed order submitted · Competition P&L tracking live`
+              : `🌊 POSITION OPENED · ${tSide === 'bid' ? 'LONG' : 'SHORT'} ${tAmount} ${tSymbol} @ ${tLeverage}x`)
         } else {
           const pnl = data.pnl ?? 0
           setTradeFlash('close')
           setTradeMsg(`${pnl >= 0 ? '🏆 WINNING CLOSE' : '📉 CLOSED AT LOSS'} · PnL ${pnlPrefix(pnl)}$${Math.abs(pnl).toFixed(2)}`)
+
+          // Achievements on close
+          if (pnl > 0) unlock('winning_close')
+          if (pnl >= 100) unlock('big_win')
+          const margin = (currentPrice * tAmount) / tLeverage
+          if (margin > 0 && (pnl / margin) * 100 >= 5) unlock('whale_hunt')
+          // If total ROI now > 10%, unlock kraken
+          const totalRealized = (comp?.participants?.[userId]?.realizedPnl ?? 0) + pnl
+          if ((totalRealized / 10000) * 100 >= 10) unlock('kraken_tier')
         }
       } else {
         setTradeMsg(`⚠ ${data.error}`)
       }
     } finally {
       setTradeLoading(false)
+      setPendingSign(null)
       setTimeout(() => setTradeMsg(''), 5000)
       setTimeout(() => setTradeFlash(null), 900)
     }
@@ -484,6 +567,8 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         body: JSON.stringify({ userId, displayName, text }),
       })
       setChatInput('')
+      chatCountRef.current += 1
+      if (chatCountRef.current >= 5) unlock('chatter')
     } finally {
       setChatSending(false)
     }
@@ -498,6 +583,8 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, displayName, text: emoji }),
       })
+      chatCountRef.current += 1
+      if (chatCountRef.current >= 5) unlock('chatter')
     } finally {
       setChatSending(false)
     }
@@ -704,6 +791,51 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
         @keyframes scaleIn { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       `}</style>
+
+      {/* Achievement unlock toast */}
+      {achievementToast && (
+        <div className="fixed top-16 right-4 z-[150] nb-card px-4 py-3 flex items-center gap-3"
+          style={{
+            borderColor: 'var(--gold)', borderWidth: 3, boxShadow: '6px 6px 0px #000',
+            background: 'var(--surface)',
+            animation: 'slideInRight 0.4s ease-out, fadeOut 0.5s ease-in 3s forwards',
+            maxWidth: 320,
+          }}>
+          <div className="text-3xl">{achievementToast.emoji}</div>
+          <div>
+            <div className="text-xs font-black tracking-widest mb-0.5" style={{ color: 'var(--gold)' }}>
+              🏅 ACHIEVEMENT UNLOCKED
+            </div>
+            <div className="font-black text-sm" style={{ color: 'var(--text)' }}>{achievementToast.title}</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{achievementToast.description}</div>
+          </div>
+          <style jsx>{`
+            @keyframes slideInRight { from { transform: translateX(120%); } to { transform: translateX(0); } }
+          `}</style>
+        </div>
+      )}
+
+      {/* TESTNET signing modal — transparent preview of the Ed25519 payload */}
+      <SigningModal
+        isOpen={pendingSign !== null}
+        onClose={() => setPendingSign(null)}
+        onConfirm={() => {
+          if (!pendingSign) return
+          submitTrade(
+            pendingSign.action,
+            pendingSign.clientOrderId,
+            pendingSign.symbol,
+            pendingSign.side,
+            pendingSign.amount,
+            pendingSign.leverage,
+            pendingSign.currentPrice,
+          )
+        }}
+        trade={pendingSign}
+        signerPubkey={SIGNER_PUBKEY}
+        builderCode={BUILDER_CODE}
+        loading={tradeLoading}
+      />
 
 
       {/* Header */}
@@ -1182,7 +1314,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                             {pnlPrefix(upnl)}{upnl.toFixed(2)}
                           </div>
                           {!isEnded && (
-                            <button onClick={() => handleTrade('close', pos.clientOrderId)}
+                            <button onClick={() => handleTrade('close', pos.clientOrderId, pos)}
                               className="nb-btn nb-btn-ghost text-xs py-1 px-2">
                               CLOSE
                             </button>
