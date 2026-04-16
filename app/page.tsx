@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trophy, Swords, Clock, Users, TrendingUp, Zap } from 'lucide-react'
+import { Trophy, Clock, Users, Zap, Globe, Wifi, WifiOff, Waves } from 'lucide-react'
 import { Competition } from '@/lib/types'
+import WalletButton from '@/components/WalletButton'
+import { usePacificaWs } from '@/lib/pacificaWs'
 
 const DURATIONS = [
   { label: '1 min (test)', value: 1 },
@@ -12,17 +14,22 @@ const DURATIONS = [
   { label: '4 hours', value: 240 },
 ]
 
+const TICKER_SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
+
 export default function Home() {
   const router = useRouter()
   const [competitions, setCompetitions] = useState<Competition[]>([])
-  const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [duration, setDuration] = useState(30)
   const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(false)
+  const [globalStats, setGlobalStats] = useState<{ totalTraders: number; globalTrades: number; totalCompetitions: number } | null>(null)
+
+  const { tickers, wsConnected } = usePacificaWs()
 
   useEffect(() => {
     fetch('/api/competitions').then(r => r.json()).then(setCompetitions).catch(() => {})
+    fetch('/api/leaderboard/global').then(r => r.json()).then(d => setGlobalStats(d.stats)).catch(() => {})
     const interval = setInterval(() => {
       fetch('/api/competitions').then(r => r.json()).then(setCompetitions).catch(() => {})
     }, 5000)
@@ -44,7 +51,6 @@ export default function Home() {
       })
       const comp = await res.json()
 
-      // Auto-join as creator
       await fetch(`/api/competitions/${comp.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,162 +86,242 @@ export default function Home() {
   const ended = competitions.filter(c => c.status === 'ended')
 
   return (
-    <div className="min-h-screen bg-gray-950">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header style={{ background: 'var(--surface)', borderBottom: '2px solid #000', boxShadow: '0 4px 0px #000' }}
+        className="px-6 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <Swords className="text-blue-400 w-7 h-7" />
-          <span className="text-xl font-bold text-white">PerpWars</span>
-          <span className="text-xs text-gray-500 border border-gray-700 rounded px-2 py-0.5">on Pacifica</span>
+          <div className="flex items-center gap-2">
+            <Waves className="w-6 h-6" style={{ color: 'var(--teal)' }} />
+            <span className="text-xl font-black tracking-tight" style={{ color: 'var(--teal)' }}>TIDAL</span>
+            <span className="text-xl font-black tracking-tight text-white">WARS</span>
+          </div>
+          <div className="nb-btn nb-btn-ghost text-xs py-1 px-2 pointer-events-none" style={{ fontSize: '10px', letterSpacing: '0.1em' }}>
+            <Zap className="w-2.5 h-2.5" /> TESTNET
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-400">
-          <Zap className="w-4 h-4 text-yellow-400" />
-          <span>Testnet</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push('/leaderboard')} className="nb-btn nb-btn-ghost py-1.5 px-3 text-xs">
+            <Trophy className="w-3 h-3" /> Hall of Fame
+          </button>
+          <WalletButton onConnected={(addr) => {
+            if (!displayName) setDisplayName(addr.slice(0, 6) + '...' + addr.slice(-4))
+          }} />
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-6 py-12">
-        {/* Hero */}
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-            PvP Perps Trading
-          </h1>
-          <p className="text-gray-400 text-lg max-w-xl mx-auto">
-            Compete in real-time perpetuals trading competitions on Pacifica DEX.
-            Best PnL wins. No mercy.
-          </p>
-          <div className="flex items-center justify-center gap-6 mt-6 text-sm text-gray-500">
-            <span className="flex items-center gap-1"><TrendingUp className="w-4 h-4 text-green-400" /> Live PnL tracking</span>
-            <span className="flex items-center gap-1"><Trophy className="w-4 h-4 text-yellow-400" /> Ranked leaderboard</span>
-            <span className="flex items-center gap-1"><Clock className="w-4 h-4 text-blue-400" /> Timed competitions</span>
+      {/* ── Live Price Ticker ────────────────────────────────────────────── */}
+      <div style={{ background: 'var(--surface-2)', borderBottom: '2px solid #000' }} className="overflow-hidden py-2 px-0">
+        <div className="ticker-tape">
+          {[...TICKER_SYMBOLS, ...TICKER_SYMBOLS].map((sym, i) => {
+            const ticker = tickers[`${sym}-PERP`] ?? tickers[sym]
+            const price = ticker?.markPrice || ticker?.lastPrice
+            const change = ticker?.change24h ?? 0
+            const fr = ticker?.fundingRate ?? 0
+            return (
+              <span key={i} className="inline-flex items-center gap-3 px-6 text-xs font-mono border-r"
+                style={{ borderColor: '#1a2535' }}>
+                <span className="font-black" style={{ color: 'var(--teal)' }}>{sym}</span>
+                <span className="text-white font-bold">
+                  {price ? `$${sym === 'BONK' ? price.toFixed(8) : price.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '—'}
+                </span>
+                {change !== 0 && (
+                  <span style={{ color: change >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                    {change >= 0 ? '▲' : '▼'}{Math.abs(change).toFixed(2)}%
+                  </span>
+                )}
+                {fr !== 0 && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    FR:{fr >= 0 ? '+' : ''}{(fr * 100).toFixed(4)}%
+                  </span>
+                )}
+              </span>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-1.5 px-4 mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+          {wsConnected
+            ? <><span className="live-dot-teal" /><span style={{ color: 'var(--teal)' }}>LIVE · Pacifica WebSocket</span></>
+            : <><WifiOff className="w-3 h-3" /> REST prices</>}
+          {wsConnected ? <Wifi className="w-3 h-3 ml-1" style={{ color: 'var(--teal)' }} /> : null}
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-10">
+
+        {/* ── Hero ────────────────────────────────────────────────────────── */}
+        <div className="mb-10">
+          <div className="nb-card mb-4 p-6" style={{ borderColor: 'var(--teal)', boxShadow: 'var(--nb-shadow-teal)' }}>
+            <div className="text-center">
+              <div className="text-xs font-black tracking-[0.3em] mb-3" style={{ color: 'var(--teal)' }}>
+                ≋ PVP PERPETUALS TRADING ON PACIFICA DEX ≋
+              </div>
+              <h1 className="text-5xl md:text-6xl font-black tracking-tight mb-4" style={{
+                textShadow: '4px 4px 0px #000, -1px -1px 0px var(--teal)'
+              }}>
+                <span style={{ color: 'var(--teal)' }}>TIDAL</span>
+                <span className="text-white"> WARS</span>
+              </h1>
+              <p className="text-sm max-w-lg mx-auto mb-5" style={{ color: 'var(--text-muted)' }}>
+                Create or join trading competitions. Connect your wallet, pick your instruments,
+                set your leverage. Best PnL when the tide goes out wins.
+              </p>
+              {globalStats && (
+                <div className="flex items-center justify-center gap-0 mx-auto max-w-xs">
+                  {[
+                    { label: 'Competitions', val: globalStats.totalCompetitions },
+                    { label: 'Traders', val: globalStats.totalTraders },
+                    { label: 'Trades', val: globalStats.globalTrades },
+                  ].map(({ label, val }, i) => (
+                    <div key={label} className="flex-1 py-3"
+                      style={{ borderLeft: i === 0 ? '2px solid #000' : 'none', borderRight: '2px solid #000', borderTop: '2px solid #000', borderBottom: '2px solid #000', background: 'var(--surface-3)' }}>
+                      <div className="text-lg font-black" style={{ color: 'var(--teal)' }}>{val.toLocaleString()}</div>
+                      <div className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Create Competition */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-10">
-          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <Swords className="w-5 h-5 text-blue-400" />
-            Create a Competition
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* ── Create Competition ───────────────────────────────────────────── */}
+        <div className="mb-10 nb-card p-5">
+          <div className="text-xs font-black tracking-[0.2em] mb-4 pb-2" style={{ color: 'var(--teal)', borderBottom: '2px solid #000' }}>
+            ≋ LAUNCH COMPETITION
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Your name</label>
+              <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Your Name</label>
               <input
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                placeholder="e.g. SolanaWhale"
+                className="nb-input"
+                placeholder="e.g. OceanWhale"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Competition name</label>
+              <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Competition Name</label>
               <input
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                placeholder="e.g. Friday Night Perps"
+                className="nb-input"
+                placeholder="e.g. Deep Sea Showdown"
                 value={name}
                 onChange={e => setName(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Duration</label>
-              <select
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                value={duration}
-                onChange={e => setDuration(Number(e.target.value))}
-              >
-                {DURATIONS.map(d => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ))}
+              <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Duration</label>
+              <select className="nb-select" value={duration} onChange={e => setDuration(Number(e.target.value))}>
+                {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
           </div>
-
           <button
             onClick={handleCreate}
             disabled={loading || !name.trim() || !displayName.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors"
+            className="nb-btn nb-btn-primary w-full py-3 text-sm"
           >
-            {loading ? 'Creating...' : 'Create & Enter Arena'}
+            {loading ? '...' : '⚡ LAUNCH & ENTER ARENA'}
           </button>
         </div>
 
-        {/* Active Competitions */}
+        {/* ── Active Competitions ──────────────────────────────────────────── */}
         {active.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              Live Competitions
-            </h2>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="live-dot" />
+              <span className="text-sm font-black tracking-widest uppercase" style={{ color: 'var(--profit)' }}>Live Competitions</span>
+              <span className="text-xs font-bold px-2 py-0.5" style={{ background: 'var(--profit)', color: '#000', border: '2px solid #000' }}>
+                {active.length}
+              </span>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {active.map(comp => (
-                <CompetitionCard key={comp.id} comp={comp} onJoin={handleJoin} />
-              ))}
+              {active.map(comp => <CompCard key={comp.id} comp={comp} onJoin={handleJoin} />)}
             </div>
           </div>
         )}
 
-        {/* Ended */}
+        {/* ── Ended Competitions ───────────────────────────────────────────── */}
         {ended.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold mb-4 text-gray-500">Past Competitions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-60">
-              {ended.map(comp => (
-                <CompetitionCard key={comp.id} comp={comp} onJoin={handleJoin} ended />
-              ))}
+          <div className="opacity-60">
+            <div className="text-sm font-black tracking-widest uppercase mb-4" style={{ color: 'var(--text-muted)' }}>
+              Past Competitions
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {ended.map(comp => <CompCard key={comp.id} comp={comp} onJoin={handleJoin} ended />)}
             </div>
           </div>
         )}
 
         {active.length === 0 && ended.length === 0 && (
-          <div className="text-center text-gray-600 py-16">
-            <Swords className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>No competitions yet. Create the first one!</p>
+          <div className="nb-card p-16 text-center">
+            <Waves className="w-12 h-12 mx-auto mb-3 opacity-20" style={{ color: 'var(--teal)' }} />
+            <p className="font-bold" style={{ color: 'var(--text-muted)' }}>No competitions yet.</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-dim)' }}>Create the first one and set sail.</p>
           </div>
         )}
+
+        {/* ── Tech footer ──────────────────────────────────────────────────── */}
+        <div className="mt-12 pt-6 flex flex-wrap gap-3 justify-center"
+          style={{ borderTop: '2px solid #000' }}>
+          {[
+            { label: 'Pacifica DEX', sub: 'Real orders on testnet' },
+            { label: 'Ed25519 Signing', sub: 'Every order signed on-chain' },
+            { label: 'Live WS Prices', sub: 'wss://test-ws.pacifica.fi' },
+            { label: 'Builder Program', sub: 'Code: tidalwars' },
+          ].map(t => (
+            <div key={t.label} className="nb-btn-ghost nb-btn text-left flex-col items-start gap-0 py-2 px-3 text-xs pointer-events-none"
+              style={{ letterSpacing: 0, textTransform: 'none' }}>
+              <span className="font-black" style={{ color: 'var(--teal)', fontSize: '11px' }}>{t.label}</span>
+              <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '10px' }}>{t.sub}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
-function CompetitionCard({ comp, onJoin, ended }: {
+function CompCard({ comp, onJoin, ended }: {
   comp: Competition
   onJoin: (id: string) => void
   ended?: boolean
 }) {
-  const participantCount = Object.keys(comp.participants).length
+  const count = Object.keys(comp.participants).length
   const timeLeft = Math.max(0, comp.endsAt - Date.now())
   const minutes = Math.floor(timeLeft / 60000)
   const seconds = Math.floor((timeLeft % 60000) / 1000)
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-600 transition-colors">
+    <div className="nb-card p-4 hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#000] transition-all"
+      style={{ boxShadow: 'var(--nb-shadow)' }}>
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h3 className="font-semibold text-white">{comp.name}</h3>
-          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-            <span className="flex items-center gap-1">
-              <Users className="w-3 h-3" /> {participantCount} traders
-            </span>
+          <h3 className="font-black text-white text-sm">{comp.name}</h3>
+          <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {count}</span>
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              {ended ? 'Ended' : `${minutes}m ${seconds}s left`}
+              {ended ? 'Ended' : `${minutes}m ${seconds.toString().padStart(2, '0')}s`}
             </span>
           </div>
         </div>
-        <span className={`text-xs px-2 py-1 rounded-full ${ended ? 'bg-gray-800 text-gray-500' : 'bg-green-900/50 text-green-400'}`}>
-          {ended ? 'Ended' : 'Live'}
+        <span className="text-xs font-black px-2 py-1" style={
+          ended
+            ? { background: 'var(--surface-3)', color: 'var(--text-muted)', border: '2px solid #000' }
+            : { background: 'var(--profit)', color: '#000', border: '2px solid #000' }
+        }>
+          {ended ? 'ENDED' : 'LIVE'}
         </span>
       </div>
-      <div className="text-xs text-gray-500 mb-3">
-        Starting balance: $10,000 virtual USDC
-      </div>
+      <div className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>$10,000 virtual USDC · up to 10x leverage</div>
       <button
         onClick={() => onJoin(comp.id)}
-        disabled={ended}
-        className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm py-2 rounded-lg transition-colors"
+        disabled={!!ended}
+        className={`nb-btn w-full py-2 text-xs ${ended ? 'nb-btn-ghost' : 'nb-btn-primary'}`}
       >
-        {ended ? 'View Results' : 'Join Competition'}
+        {ended ? 'VIEW RESULTS' : '⚡ JOIN COMPETITION'}
       </button>
     </div>
   )

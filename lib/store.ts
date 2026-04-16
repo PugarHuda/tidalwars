@@ -1,18 +1,36 @@
 import { Competition, TradeEvent, Participant } from './types'
 import { randomUUID } from 'crypto'
 
-// In-memory store — good enough for demo
-const competitions = new Map<string, Competition>()
-const tradeEvents = new Map<string, TradeEvent[]>() // competitionId → events
-const settledCompetitions = new Set<string>() // already auto-settled
-let lastKnownPrices: Record<string, number> = {} // updated by price polling
+/**
+ * Persist state in globalThis so it survives Turbopack HMR module re-evaluation.
+ * Without this, changing any file in the import chain would create a fresh Map,
+ * losing all in-flight competitions. This is dev-only behaviour; prod builds
+ * evaluate modules exactly once.
+ */
+type GlobalStore = {
+  __pw_competitions: Map<string, Competition>
+  __pw_tradeEvents: Map<string, TradeEvent[]>
+  __pw_settled: Set<string>
+  __pw_prices: Record<string, number>
+}
+const g = globalThis as typeof globalThis & Partial<GlobalStore>
+if (!g.__pw_competitions) g.__pw_competitions = new Map()
+if (!g.__pw_tradeEvents)  g.__pw_tradeEvents  = new Map()
+if (!g.__pw_settled)      g.__pw_settled      = new Set()
+if (!g.__pw_prices)       g.__pw_prices       = {}
+
+const competitions      = g.__pw_competitions
+const tradeEvents       = g.__pw_tradeEvents
+const settledCompetitions = g.__pw_settled
+// lastKnownPrices is mutable — access via getter/setter below
+const _pricesRef = g
 
 export function updateLastKnownPrices(prices: Record<string, number>) {
-  lastKnownPrices = { ...lastKnownPrices, ...prices }
+  _pricesRef.__pw_prices = { ..._pricesRef.__pw_prices, ...prices }
 }
 
 export function getLastKnownPrices(): Record<string, number> {
-  return lastKnownPrices
+  return _pricesRef.__pw_prices ?? {}
 }
 
 export const ALLOWED_SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
@@ -53,7 +71,7 @@ export function settleCompetition(id: string, prices?: Record<string, number>): 
   settledCompetitions.add(id)
   comp.status = 'ended'
 
-  const settlePrices = prices ?? lastKnownPrices
+  const settlePrices = prices ?? getLastKnownPrices()
 
   // Auto-close all open positions at current market prices
   for (const [userId, participant] of Object.entries(comp.participants)) {

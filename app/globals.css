@@ -8,18 +8,153 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Custom scrollbar for dark theme */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* ── TidalWars Design System: Neo Brutalism × Ocean ─────────────────────────── */
+:root {
+  --bg: #07090f;
+  --surface: #0c1220;
+  --surface-2: #111928;
+  --surface-3: #16213a;
+  --teal: #00c8e0;
+  --teal-dim: #006a78;
+  --teal-glow: rgba(0, 200, 224, 0.12);
+  --profit: #00e87a;
+  --loss: #ff2d55;
+  --gold: #ffd700;
+  --text-muted: #4a6070;
+  --text-dim: #2a3a48;
+
+  /* Neo Brutalism shadows */
+  --nb-shadow: 4px 4px 0px #000;
+  --nb-shadow-sm: 2px 2px 0px #000;
+  --nb-shadow-lg: 6px 6px 0px #000;
+  --nb-shadow-teal: 4px 4px 0px #004455;
 }
-::-webkit-scrollbar-track {
-  background: #111827;
+
+body {
+  background: var(--bg);
+  color: white;
 }
-::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
+
+/* ── Neo Brutalism Components ───────────────────────────────────────────────── */
+
+.nb-card {
+  background: var(--surface);
+  border: 2px solid #000;
+  box-shadow: var(--nb-shadow);
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #4B5563;
+
+.nb-card-accent {
+  background: var(--surface);
+  border: 2px solid var(--teal);
+  box-shadow: var(--nb-shadow-teal);
 }
+
+.nb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 13px;
+  border: 2px solid #000;
+  box-shadow: var(--nb-shadow);
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.nb-btn:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--nb-shadow-lg);
+}
+
+.nb-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+.nb-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.nb-btn-primary { background: var(--teal); color: #000; }
+.nb-btn-green   { background: var(--profit); color: #000; }
+.nb-btn-red     { background: var(--loss); color: #fff; }
+.nb-btn-ghost   { background: var(--surface-2); color: #fff; border-color: #1a2535; box-shadow: 3px 3px 0px #000; }
+.nb-btn-gold    { background: var(--gold); color: #000; }
+
+.nb-input {
+  background: var(--bg);
+  border: 2px solid #1a2535;
+  box-shadow: inset 2px 2px 0px #000;
+  color: white;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.1s, box-shadow 0.1s;
+}
+
+.nb-input:focus {
+  border-color: var(--teal);
+  box-shadow: inset 2px 2px 0px #000, 0 0 0 1px var(--teal);
+}
+
+.nb-input::placeholder { color: var(--text-muted); }
+
+.nb-select {
+  background: var(--bg);
+  border: 2px solid #1a2535;
+  box-shadow: inset 2px 2px 0px #000;
+  color: white;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+}
+
+.nb-select:focus {
+  border-color: var(--teal);
+}
+
+/* ── Live dot pulse ─────────────────────────────────────────────────────────── */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--profit);
+  border-radius: 50%;
+  animation: live-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.live-dot-teal {
+  width: 7px;
+  height: 7px;
+  background: var(--teal);
+  border-radius: 50%;
+  animation: live-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Custom scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #1a2535; }
+::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
+
+/* ── PnL colors ─────────────────────────────────────────────────────────────── */
+.profit { color: var(--profit); }
+.loss   { color: var(--loss); }

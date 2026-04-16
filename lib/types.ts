@@ -58,6 +58,7 @@ export interface TradeEvent {
   leverage: number
   action: 'open' | 'close'
   pnl?: number
+  pacificaOrderId?: string  // real on-chain order ID when executed on Pacifica
   timestamp: number
 }
 

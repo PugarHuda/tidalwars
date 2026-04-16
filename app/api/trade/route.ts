@@ -7,6 +7,7 @@ import {
   updateParticipantPnl,
   STARTING_BALANCE,
 } from '@/lib/store'
+import { placeMarketOrder, closePosition, getDemoKeypair } from '@/lib/pacifica'
 import { randomUUID } from 'crypto'
 
 export async function POST(req: NextRequest) {
@@ -25,10 +26,15 @@ export async function POST(req: NextRequest) {
   if (!participant) return NextResponse.json({ error: 'Not a participant' }, { status: 403 })
 
   const price = currentPrice ?? 0
+  const orderId = clientOrderId ?? randomUUID()
   let pnl: number | undefined
+  let pacificaResult: { success: boolean; orderId?: string; error?: string } | null = null
+
+  // Get demo keypair for real Pacifica order execution
+  const demoKeypair = getDemoKeypair()
 
   if (action === 'open') {
-    // Check virtual balance (simplified)
+    // Check virtual balance
     const usedMargin = participant.positions.reduce((sum, p) => {
       return sum + (p.entryPrice * p.amount) / p.leverage
     }, 0)
@@ -39,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Insufficient virtual balance' }, { status: 400 })
     }
 
-    const orderId = clientOrderId ?? randomUUID()
+    // Track virtual position
     addParticipantPosition(competitionId, userId, {
       symbol,
       side,
@@ -49,6 +55,17 @@ export async function POST(req: NextRequest) {
       openedAt: Date.now(),
       clientOrderId: orderId,
     })
+
+    // Fire real order to Pacifica testnet (non-blocking, best-effort)
+    if (demoKeypair) {
+      pacificaResult = await placeMarketOrder({
+        keypair: demoKeypair,
+        symbol,
+        side,
+        amount: String(amount),
+        clientOrderId: orderId,
+      }).catch(() => ({ success: false, error: 'Network error' }))
+    }
 
     addTradeEvent(competitionId, {
       id: randomUUID(),
@@ -61,10 +78,15 @@ export async function POST(req: NextRequest) {
       price,
       leverage,
       action: 'open',
+      pacificaOrderId: pacificaResult?.orderId,
       timestamp: Date.now(),
     })
 
-    return NextResponse.json({ success: true, clientOrderId: orderId })
+    return NextResponse.json({
+      success: true,
+      clientOrderId: orderId,
+      pacifica: pacificaResult ?? { success: false, error: 'No keypair configured' },
+    })
   }
 
   if (action === 'close') {
@@ -78,6 +100,17 @@ export async function POST(req: NextRequest) {
 
     updateParticipantPnl(competitionId, userId, pnl)
 
+    // Close real position on Pacifica (best-effort)
+    if (demoKeypair) {
+      pacificaResult = await closePosition({
+        keypair: demoKeypair,
+        symbol: position.symbol,
+        side: position.side,
+        amount: String(position.amount),
+        clientOrderId: randomUUID(),
+      }).catch(() => ({ success: false, error: 'Network error' }))
+    }
+
     addTradeEvent(competitionId, {
       id: randomUUID(),
       competitionId,
@@ -90,10 +123,15 @@ export async function POST(req: NextRequest) {
       leverage: position.leverage,
       action: 'close',
       pnl,
+      pacificaOrderId: pacificaResult?.orderId,
       timestamp: Date.now(),
     })
 
-    return NextResponse.json({ success: true, pnl })
+    return NextResponse.json({
+      success: true,
+      pnl,
+      pacifica: pacificaResult ?? { success: false, error: 'No keypair configured' },
+    })
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
