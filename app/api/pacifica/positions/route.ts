@@ -32,8 +32,9 @@ function normalizePosition(p: Record<string, unknown>): PacificaPosition {
 }
 
 export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get('wallet')
-  if (!wallet) return NextResponse.json({ error: 'wallet param required' }, { status: 400 })
+  // Accept both ?wallet= and ?account= for flexibility
+  const wallet = req.nextUrl.searchParams.get('wallet') ?? req.nextUrl.searchParams.get('account')
+  if (!wallet) return NextResponse.json({ positions: [], note: 'wallet or account param required' })
 
   try {
     // Try different Pacifica position endpoints
