@@ -147,19 +147,33 @@ export async function getInstruments(): Promise<{
   }
 }
 
-export async function approveBuilderCode(keypair: Keypair, builderCode: string): Promise<{ success: boolean; raw?: unknown }> {
+export async function approveBuilderCode(
+  keypair: Keypair,
+  builderCode: string,
+  maxFeeRate: string = '0.001',
+): Promise<{ success: boolean; raw?: unknown }> {
   try {
-    const payload = { builder_code: builderCode }
+    const payload = { builder_code: builderCode, max_fee_rate: maxFeeRate }
     const body = buildSignedBody('approve_builder_code', payload, keypair)
-    const res = await fetch(`${REST_URL}/account/builder_code`, {
+    const res = await fetch(`${REST_URL}/account/builder_codes/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     const data = await res.json()
-    return { success: res.ok, raw: data }
+    return { success: res.ok && data?.success !== false, raw: data }
   } catch (e) {
     return { success: false, raw: String(e) }
+  }
+}
+
+export async function getBuilderCodeApprovals(publicKey: string): Promise<unknown> {
+  try {
+    const res = await fetch(`${REST_URL}/account/builder_codes/approvals?account=${publicKey}`)
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
   }
 }
 
