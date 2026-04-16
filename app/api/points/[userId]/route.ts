@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPoints, captainFor, CAPTAIN_TIERS } from '@/lib/points'
-import { kget } from '@/lib/kv'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   const { userId } = await params
-  const rawFromRedis = await kget<unknown>(`tidal_points:${userId}`)
   const record = await getPoints(userId)
   if (!record) {
     return NextResponse.json({
@@ -13,8 +11,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ use
       bestRoi: 0, totalPnl: 0,
       captain: captainFor(0),
       tiers: CAPTAIN_TIERS,
-      _debug_raw_from_redis: rawFromRedis,
-      _debug_raw_type: typeof rawFromRedis,
     })
   }
   return NextResponse.json({
