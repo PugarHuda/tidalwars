@@ -794,11 +794,10 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
       {/* Achievement unlock toast */}
       {achievementToast && (
-        <div className="fixed top-16 right-4 z-[150] nb-card px-4 py-3 flex items-center gap-3"
+        <div className="fixed top-16 right-4 z-[150] nb-card px-4 py-3 flex items-center gap-3 toast-slide-in"
           style={{
             borderColor: 'var(--gold)', borderWidth: 3, boxShadow: '6px 6px 0px #000',
             background: 'var(--surface)',
-            animation: 'slideInRight 0.4s ease-out, fadeOut 0.5s ease-in 3s forwards',
             maxWidth: 320,
           }}>
           <div className="text-3xl">{achievementToast.emoji}</div>
@@ -809,9 +808,6 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             <div className="font-black text-sm" style={{ color: 'var(--text)' }}>{achievementToast.title}</div>
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{achievementToast.description}</div>
           </div>
-          <style jsx>{`
-            @keyframes slideInRight { from { transform: translateX(120%); } to { transform: translateX(0); } }
-          `}</style>
         </div>
       )}
 

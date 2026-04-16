@@ -276,6 +276,19 @@ body {
 }
 .flash-new { animation: flash-teal 1.4s ease-out; }
 
+/* Achievement toast slide-in */
+@keyframes slideInRight {
+  from { transform: translateX(120%); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+@keyframes toastFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.toast-slide-in {
+  animation: slideInRight 0.4s ease-out, toastFadeOut 0.5s ease-in 3s forwards;
+}
+
 /* Chat emoji reaction button */
 .emoji-btn {
   padding: 4px 6px;
