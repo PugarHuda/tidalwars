@@ -510,7 +510,35 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     }
   }, [chat.length, rightTab])
 
-  const myEntry = leaderboard.find(e => e.userId === userId)
+  // Live leaderboard computed from comp state + merged prices (WS + REST)
+  const liveLeaderboard = useMemo<LeaderboardEntry[]>(() => {
+    const participants = comp?.participants ? Object.values(comp.participants) : []
+    if (participants.length === 0) return leaderboard
+    const computed: LeaderboardEntry[] = participants.map((p, i) => {
+      const unrealized = p.positions.reduce((s, pos) => {
+        const cur = prices[pos.symbol] ?? pos.entryPrice
+        const diff = pos.side === 'bid' ? cur - pos.entryPrice : pos.entryPrice - cur
+        return s + diff * pos.amount * pos.leverage
+      }, 0)
+      const total = unrealized + p.realizedPnl
+      return {
+        userId: p.userId,
+        displayName: p.displayName,
+        walletAddress: p.walletAddress,
+        unrealizedPnl: unrealized,
+        realizedPnl: p.realizedPnl,
+        totalPnl: total,
+        roi: (total / 10000) * 100,
+        positionCount: p.positions.length,
+        rank: i + 1,
+      }
+    })
+    computed.sort((a, b) => b.totalPnl - a.totalPnl)
+    computed.forEach((e, i) => { e.rank = i + 1 })
+    return computed
+  }, [comp, prices, leaderboard])
+
+  const myEntry = liveLeaderboard.find(e => e.userId === userId)
   const myPositions: Position[] = comp?.participants?.[userId]?.positions ?? []
   const isEnded = comp?.status === 'ended'
   const minutes = Math.floor(timeLeft / 60000)
@@ -749,10 +777,10 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             <Trophy className="w-3.5 h-3.5" /> Leaderboard
           </div>
           <div className="flex-1 overflow-y-auto">
-            {leaderboard.length === 0 ? (
+            {liveLeaderboard.length === 0 ? (
               <div className="text-center text-xs py-8" style={{ color: 'var(--text-dim)' }}>No traders yet</div>
             ) : (
-              leaderboard.map((entry, i) => {
+              liveLeaderboard.map((entry, i) => {
                 const rank = oceanRank(entry.roi)
                 return (
                   <div key={entry.userId} className="px-3 py-2"
@@ -877,33 +905,72 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </div>
           )}
 
-          {/* Virtual balance + faucet banner */}
-          {!isEnded && (
-            <div className="flex items-center justify-between px-4 py-2 text-xs"
-              style={{ borderBottom: '2px solid #000', background: 'var(--surface-2)' }}>
-              <div className="flex items-center gap-3">
-                <div>
-                  <span style={{ color: 'var(--text-muted)' }}>Virtual Balance: </span>
-                  <span className="font-black" style={{ color: 'var(--teal)' }}>
-                    ${(10000 + (myEntry?.totalPnl ?? 0)).toFixed(2)}
-                  </span>
+          {/* LIVE wallet card — client-side computed from WS prices */}
+          {!isEnded && (() => {
+            const STARTING = 10000
+            const realized = comp.participants?.[userId]?.realizedPnl ?? 0
+            const marginLocked = myPositions.reduce((s, p) => s + (p.entryPrice * p.amount) / p.leverage, 0)
+            const unrealized = myPositions.reduce((s, p) => {
+              const cur = prices[p.symbol] ?? p.entryPrice
+              const diff = p.side === 'bid' ? cur - p.entryPrice : p.entryPrice - cur
+              return s + diff * p.amount * p.leverage
+            }, 0)
+            const equity = STARTING + realized + unrealized
+            const available = STARTING + realized - marginLocked
+            const pct = ((equity - STARTING) / STARTING) * 100
+            const pnlColor = (equity - STARTING) >= 0 ? 'var(--profit)' : 'var(--loss)'
+
+            return (
+              <div style={{ borderBottom: '2px solid #000', background: 'var(--surface-2)' }}>
+                <div className="grid grid-cols-4 text-xs">
+                  <div className="px-3 py-2" style={{ borderRight: '1px solid var(--border-soft)' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '9px', letterSpacing: '0.1em' }}>EQUITY</div>
+                    <div className="font-black text-sm font-mono" style={{ color: pnlColor }}>
+                      ${equity.toFixed(2)}
+                    </div>
+                    <div style={{ color: pnlColor, fontSize: '9px', fontWeight: 700 }}>
+                      {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+                    </div>
+                  </div>
+                  <div className="px-3 py-2" style={{ borderRight: '1px solid var(--border-soft)' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '9px', letterSpacing: '0.1em' }}>AVAILABLE</div>
+                    <div className="font-black text-sm font-mono" style={{ color: 'var(--teal)' }}>
+                      ${Math.max(0, available).toFixed(2)}
+                    </div>
+                    <div style={{ color: 'var(--text-dim)', fontSize: '9px' }}>for new positions</div>
+                  </div>
+                  <div className="px-3 py-2" style={{ borderRight: '1px solid var(--border-soft)' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '9px', letterSpacing: '0.1em' }}>LOCKED</div>
+                    <div className="font-black text-sm font-mono" style={{ color: marginLocked > 0 ? 'var(--gold)' : 'var(--text-dim)' }}>
+                      ${marginLocked.toFixed(2)}
+                    </div>
+                    <div style={{ color: 'var(--text-dim)', fontSize: '9px' }}>{myPositions.length} position{myPositions.length !== 1 ? 's' : ''}</div>
+                  </div>
+                  <div className="px-3 py-2">
+                    <div style={{ color: 'var(--text-muted)', fontSize: '9px', letterSpacing: '0.1em' }}>UNREALIZED P&L</div>
+                    <div className="font-black text-sm font-mono" style={{ color: unrealized >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                      {unrealized >= 0 ? '+' : ''}${unrealized.toFixed(2)}
+                    </div>
+                    <div style={{ color: realized !== 0 ? (realized >= 0 ? 'var(--profit)' : 'var(--loss)') : 'var(--text-dim)', fontSize: '9px' }}>
+                      realized: {realized >= 0 ? '+' : ''}${realized.toFixed(2)}
+                    </div>
+                  </div>
                 </div>
-                <div className="h-3 w-px" style={{ background: 'var(--border-soft)' }} />
-                <div className="hidden md:flex items-center gap-1">
-                  <span style={{ color: 'var(--text-muted)' }}>P&L: </span>
-                  <span className="font-black" style={{ color: (myEntry?.totalPnl ?? 0) >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
-                    {pnlPrefix(myEntry?.totalPnl ?? 0)}{(myEntry?.totalPnl ?? 0).toFixed(2)}
+                <div className="flex items-center justify-between px-3 py-1.5 text-xs"
+                  style={{ borderTop: '1px solid var(--border-soft)' }}>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
+                    {tradeMode === 'virtual' ? '🌊 Virtual · updates live per WebSocket tick' : '⬡ Testnet mode · balance still virtual for competition PnL'}
                   </span>
+                  <a href="https://test-app.pacifica.fi/" target="_blank" rel="noopener"
+                    className="flex items-center gap-1 font-black"
+                    style={{ color: 'var(--gold)', fontSize: '10px' }}
+                    title="Deposit testnet USDC on Pacifica">
+                    <ExternalLink className="w-3 h-3" /> FAUCET
+                  </a>
                 </div>
               </div>
-              <a href="https://test-app.pacifica.fi/" target="_blank" rel="noopener"
-                className="flex items-center gap-1 font-black"
-                style={{ color: 'var(--gold)', fontSize: '11px' }}
-                title="Get testnet USDC to trade directly on Pacifica">
-                <ExternalLink className="w-3 h-3" /> TESTNET FAUCET
-              </a>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Trade form */}
           {!isEnded ? (
@@ -966,6 +1033,39 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                   </label>
                   <input type="number" step="0.001" min="0.001"
                     className="nb-input" value={amount} onChange={e => setAmount(e.target.value)} />
+                  {/* Size presets based on available balance */}
+                  {(() => {
+                    const realized = comp.participants?.[userId]?.realizedPnl ?? 0
+                    const marginLocked = myPositions.reduce((s, p) => s + (p.entryPrice * p.amount) / p.leverage, 0)
+                    const available = Math.max(0, 10000 + realized - marginLocked)
+                    const price = prices[symbol] ?? 0
+                    const maxAmount = price > 0 ? (available * leverage) / price : 0
+                    const presets = [
+                      { label: '25%', pct: 0.25 },
+                      { label: '50%', pct: 0.5 },
+                      { label: '75%', pct: 0.75 },
+                      { label: 'MAX', pct: 0.99 },
+                    ]
+                    return (
+                      <div className="flex gap-1 mt-1.5">
+                        {presets.map(p => (
+                          <button key={p.label} type="button"
+                            onClick={() => setAmount((maxAmount * p.pct).toFixed(3))}
+                            disabled={maxAmount === 0}
+                            className="flex-1 py-1 text-xs font-black"
+                            style={{
+                              background: 'var(--surface)',
+                              border: '1px solid var(--border-soft)',
+                              color: 'var(--text-muted)',
+                              cursor: maxAmount === 0 ? 'not-allowed' : 'pointer',
+                              opacity: maxAmount === 0 ? 0.4 : 1,
+                            }}>
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div>
                   <label className="block text-xs font-black mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
@@ -973,6 +1073,21 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                   </label>
                   <input type="range" min={1} max={comp.maxLeverage} step={1}
                     className="w-full mt-2" value={leverage} onChange={e => setLeverage(Number(e.target.value))} />
+                  <div className="flex gap-1 mt-1.5">
+                    {[2, 5, 10].filter(l => l <= comp.maxLeverage).map(l => (
+                      <button key={l} type="button"
+                        onClick={() => setLeverage(l)}
+                        className="flex-1 py-1 text-xs font-black"
+                        style={{
+                          background: leverage === l ? 'var(--teal)' : 'var(--surface)',
+                          border: '1px solid',
+                          borderColor: leverage === l ? 'var(--teal)' : 'var(--border-soft)',
+                          color: leverage === l ? '#000' : 'var(--text-muted)',
+                        }}>
+                        {l}x
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
