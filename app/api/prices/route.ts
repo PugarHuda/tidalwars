@@ -28,7 +28,14 @@ export async function GET() {
       const prices: Record<string, number> = {}
       for (const row of rows) {
         const price = parseFloat(row.mark ?? row.mid ?? row.oracle ?? '0')
-        if (price > 0 && row.symbol) prices[row.symbol] = price
+        if (price > 0 && row.symbol) {
+          prices[row.symbol] = price
+          // Pacifica lists some memecoins with k-prefix (kBONK = 1000 BONK)
+          // Mirror them under the base symbol for UI consistency
+          if (row.symbol.startsWith('k') && row.symbol.length > 1) {
+            prices[row.symbol.slice(1)] = price / 1000
+          }
+        }
       }
       if (Object.keys(prices).length > 0) {
         updateLastKnownPrices(prices)
