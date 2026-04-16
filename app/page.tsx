@@ -290,21 +290,69 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Tech footer ──────────────────────────────────────────────────── */}
-        <div className="mt-12 pt-6 flex flex-wrap gap-3 justify-center"
-          style={{ borderTop: '2px solid #000' }}>
-          {[
-            { label: 'Pacifica DEX', sub: 'Real orders on testnet' },
-            { label: 'Ed25519 Signing', sub: 'Every order signed on-chain' },
-            { label: 'Live WS Prices', sub: 'wss://test-ws.pacifica.fi' },
-            { label: 'Builder Program', sub: 'Code: tidalwars' },
-          ].map(t => (
-            <div key={t.label} className="nb-btn-ghost nb-btn text-left flex-col items-start gap-0 py-2 px-3 text-xs pointer-events-none"
-              style={{ letterSpacing: 0, textTransform: 'none' }}>
-              <span className="font-black" style={{ color: 'var(--teal)', fontSize: '11px' }}>{t.label}</span>
-              <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '10px' }}>{t.sub}</span>
+        {/* ── How It Works ─────────────────────────────────────────────────── */}
+        <div className="mt-16 mb-10">
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 mb-3 text-xs font-black tracking-[0.2em]"
+              style={{ background: 'var(--teal-bg)', border: '1px solid var(--teal)', color: 'var(--teal)' }}>
+              HOW IT WORKS
             </div>
-          ))}
+            <h2 className="text-2xl md:text-3xl font-black" style={{ color: 'var(--text)' }}>
+              Three steps. One winner.
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              {
+                num: '01', title: 'JOIN ARENA',
+                body: 'Pick an active competition or create your own. Set duration from 1 min to 4 hours.',
+                color: 'var(--teal)',
+              },
+              {
+                num: '02', title: 'TRADE LIVE',
+                body: 'Long or short BTC, ETH, SOL, WIF, BONK perpetuals. Up to 10× leverage. Real Pacifica prices via WebSocket.',
+                color: 'var(--profit)',
+              },
+              {
+                num: '03', title: 'WIN THE TIDE',
+                body: 'Highest P&L when the timer hits zero takes the crown. Live leaderboard updates every tick.',
+                color: 'var(--gold)',
+              },
+            ].map(step => (
+              <div key={step.num} className="nb-card p-5 relative overflow-hidden"
+                style={{ borderTopColor: step.color, borderTopWidth: 3 }}>
+                <div className="text-5xl font-black mb-2" style={{ color: step.color, opacity: 0.2, letterSpacing: '-0.05em' }}>
+                  {step.num}
+                </div>
+                <div className="text-sm font-black tracking-wider mb-2" style={{ color: step.color }}>{step.title}</div>
+                <div className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>{step.body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Tech footer ──────────────────────────────────────────────────── */}
+        <div className="mt-12 pt-6" style={{ borderTop: '2px solid #000' }}>
+          <div className="text-xs font-black tracking-[0.2em] text-center mb-4" style={{ color: 'var(--text-muted)' }}>
+            POWERED BY
+          </div>
+          <div className="flex flex-wrap gap-3 justify-center">
+            {[
+              { label: 'Pacifica DEX', sub: 'Ed25519 signed market orders', color: 'var(--teal)' },
+              { label: 'Builder Program', sub: 'Code: tidalwars', color: 'var(--profit)' },
+              { label: 'Live WS Prices', sub: 'wss://test-ws.pacifica.fi', color: 'var(--teal)' },
+              { label: 'Privy Auth', sub: 'Embedded wallet login', color: 'var(--gold)' },
+              { label: 'Fuul Analytics', sub: 'Events API tracking', color: 'var(--profit)' },
+              { label: 'Elfa AI', sub: 'Trending token signals', color: 'var(--gold)' },
+              { label: 'Upstash Redis', sub: 'Serverless persistence', color: 'var(--teal)' },
+            ].map(t => (
+              <div key={t.label} className="nb-btn-ghost nb-btn text-left flex-col items-start gap-0 py-2 px-3 text-xs pointer-events-none"
+                style={{ letterSpacing: 0, textTransform: 'none' }}>
+                <span className="font-black" style={{ color: t.color, fontSize: '11px' }}>{t.label}</span>
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '10px' }}>{t.sub}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

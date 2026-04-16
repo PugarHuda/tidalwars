@@ -343,13 +343,14 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           const onChain = data.pacifica?.success
           setLastPacificaId(data.pacifica?.orderId ?? null)
           setTradeMsg(onChain
-            ? `✅ Opened on Pacifica (${data.pacifica.orderId?.slice(0, 10)}...)`
-            : '✅ Position opened (virtual)')
+            ? `⬡ Opened on Pacifica — order ${data.pacifica.orderId?.slice(0, 10)}...`
+            : `⚡ Position opened · Competition P&L tracking live`)
         } else {
-          setTradeMsg(`✅ Closed! PnL: ${pnlPrefix(data.pnl)}$${Math.abs(data.pnl ?? 0).toFixed(2)}`)
+          const pnl = data.pnl ?? 0
+          setTradeMsg(`${pnl >= 0 ? '🏆' : '📉'} Closed · PnL ${pnlPrefix(pnl)}$${Math.abs(pnl).toFixed(2)}`)
         }
       } else {
-        setTradeMsg(`❌ ${data.error}`)
+        setTradeMsg(`⚠ ${data.error}`)
       }
     } finally {
       setTradeLoading(false)
@@ -828,8 +829,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           )}
 
           {myPositions.length === 0 && !isEnded && (
-            <div className="flex-1 flex items-center justify-center text-xs font-black tracking-widest" style={{ color: 'var(--text-dim)' }}>
-              NO OPEN POSITIONS
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+              <div className="text-3xl mb-2 opacity-50">🌊</div>
+              <div className="text-xs font-black tracking-widest mb-1" style={{ color: 'var(--text-muted)' }}>
+                READY TO TRADE
+              </div>
+              <div className="text-xs" style={{ color: 'var(--text-dim)', maxWidth: 280 }}>
+                Pick a symbol above, choose LONG or SHORT, and hit the trade button to open your first position.
+              </div>
+              {elfaTokens.length > 0 && (
+                <div className="mt-3 text-xs font-bold flex items-center gap-1" style={{ color: 'var(--gold)' }}>
+                  <Sparkles className="w-3 h-3" />
+                  <span>🔥 {elfaTokens.slice(0,3).map(t => t.symbol).join(' · ')} trending now</span>
+                </div>
+              )}
             </div>
           )}
         </div>
