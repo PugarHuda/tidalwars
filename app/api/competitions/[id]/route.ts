@@ -4,6 +4,7 @@ import {
   addTradeEvent, addParticipantPosition, removeParticipantPosition, updateParticipantPnl,
 } from '@/lib/store'
 import { placeMarketOrder, closePosition, getDemoKeypair } from '@/lib/pacifica'
+import { trackTradeOpened, trackTradeClosed, trackCompetitionJoined, trackCompetitionWon } from '@/lib/fuul'
 import { randomUUID } from 'crypto'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .map(p => ({ userId: p.userId, displayName: p.displayName, totalPnl: p.realizedPnl, roi: (p.realizedPnl / 10000) * 100 }))
       .sort((a, b) => b.totalPnl - a.totalPnl)
       .map((e, i) => ({ ...e, rank: i + 1 }))
+    if (final.length > 0) {
+      const winner = comp.participants[final[0].userId]
+      trackCompetitionWon({ userId: final[0].userId, walletAddress: winner?.walletAddress, pnl: final[0].totalPnl })
+    }
     return NextResponse.json({ settled: true, final })
   }
 
@@ -73,6 +78,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         timestamp: Date.now(),
       })
 
+      trackTradeOpened({
+        userId, walletAddress: participant.walletAddress,
+        symbol, notionalValue: price * amount * leverage, leverage,
+      })
+
       return NextResponse.json({ success: true, clientOrderId: orderId, pacifica: pacificaResult })
     }
 
@@ -100,6 +110,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         timestamp: Date.now(),
       })
 
+      trackTradeClosed({ userId, walletAddress: participant.walletAddress, pnl, symbol: position.symbol })
+
       return NextResponse.json({ success: true, pnl, pacifica: pacificaResult })
     }
   }
@@ -117,5 +129,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     positions: [], realizedPnl: 0, joinedAt: Date.now(),
   })
   if (!joined) return NextResponse.json({ error: 'Could not join' }, { status: 400 })
+  trackCompetitionJoined({ userId, walletAddress: walletAddress ?? '' })
   return NextResponse.json({ success: true, startingBalance: STARTING_BALANCE })
 }

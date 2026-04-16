@@ -3,11 +3,12 @@ import { useState, useEffect, useCallback, use, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Trophy, TrendingUp, TrendingDown, Clock, ArrowLeft, Zap,
-  Activity, Wifi, WifiOff, BarChart2, Globe, Waves,
+  Activity, Wifi, WifiOff, BarChart2, Globe, Waves, Sparkles,
 } from 'lucide-react'
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
 import { usePacificaWs } from '@/lib/pacificaWs'
+import type { TrendingToken } from '@/lib/elfa'
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
@@ -108,6 +109,32 @@ function useCompetitionStream(id: string) {
   return { comp, feed, restPrices, leaderboard, sseConnected: connected }
 }
 
+// ── Elfa AI Trending hook ─────────────────────────────────────────────────────
+
+function useElfaTrending() {
+  const [tokens, setTokens] = useState<TrendingToken[]>([])
+  const [enabled, setEnabled] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function fetchTrending() {
+      try {
+        const res = await fetch('/api/elfa/trending?timeWindow=4h')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        setEnabled(data.enabled ?? false)
+        setTokens(data.tokens ?? [])
+      } catch { /* silent */ }
+    }
+    fetchTrending()
+    const t = setInterval(fetchTrending, 5 * 60 * 1000) // refresh every 5 min
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+
+  return { tokens, enabled }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ArenaPage({ params }: { params: Promise<{ id: string }> }) {
@@ -116,6 +143,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
   const { comp, feed, restPrices, leaderboard, sseConnected } = useCompetitionStream(id)
   const { tickers, wsConnected } = usePacificaWs()
+  const { tokens: elfaTokens, enabled: elfaEnabled } = useElfaTrending()
 
   const [settled, setSettled] = useState(false)
   const [winner, setWinner] = useState<LeaderboardEntry | null>(null)
@@ -344,6 +372,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               <Zap className="w-3 h-3" /> on-chain
             </span>
           )}
+          <span className="text-xs hidden lg:flex items-center gap-1 px-1.5 py-0.5 font-black"
+            style={{ border: '1px solid #000', background: '#1a2535', color: 'var(--text-muted)', fontSize: '10px' }}
+            title="Trade events tracked by Fuul">
+            FUUL
+          </span>
           <WalletButton />
         </div>
       </header>
@@ -616,7 +649,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           )}
         </div>
 
-        {/* ── Right: Live Feed ──────────────────────────────────────────── */}
+        {/* ── Right: Live Feed + Elfa Pulse ─────────────────────────────── */}
         <div className="w-56 flex flex-col" style={{ borderLeft: '2px solid #000' }}>
           <div className="flex items-center justify-between px-3 py-2.5"
             style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
@@ -627,7 +660,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>{feed.length}</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="overflow-y-auto" style={{ flex: '1 1 0', minHeight: 0 }}>
             {feed.length === 0 ? (
               <div className="text-center py-10">
                 <BarChart2 className="w-5 h-5 mx-auto mb-2 opacity-20" style={{ color: 'var(--teal)' }} />
@@ -670,6 +703,63 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                 </div>
               ))
+            )}
+          </div>
+
+          {/* ── Elfa AI Social Pulse ─────────────────────────────────────── */}
+          <div style={{ borderTop: '2px solid #000', flexShrink: 0 }}>
+            <div className="flex items-center justify-between px-3 py-2"
+              style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3" style={{ color: 'var(--gold)' }} />
+                <span className="text-xs font-black tracking-widest uppercase" style={{ color: 'var(--gold)' }}>
+                  Social Pulse
+                </span>
+              </div>
+              <span className="text-xs font-black px-1" style={{
+                background: elfaEnabled ? 'var(--gold)' : '#1a2535',
+                color: elfaEnabled ? '#000' : 'var(--text-dim)',
+                border: '1px solid #000',
+                fontSize: '9px',
+              }}>
+                ELFA
+              </span>
+            </div>
+
+            {elfaEnabled && elfaTokens.length > 0 ? (
+              <div>
+                {elfaTokens.slice(0, 5).map(tok => (
+                  <div key={tok.symbol} className="flex items-center gap-2 px-3 py-1.5"
+                    style={{ borderBottom: '1px solid #000' }}>
+                    <span className="text-xs font-black w-4 text-center" style={{ color: 'var(--text-dim)' }}>
+                      {tok.rank}
+                    </span>
+                    <span className="text-xs font-black flex-1" style={{ color: 'var(--teal)' }}>
+                      {tok.symbol}
+                    </span>
+                    <div className="text-right">
+                      <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                        {tok.mentionCount.toLocaleString()}
+                      </div>
+                      {tok.changePercent != null && (
+                        <div className="text-xs font-black" style={{
+                          color: tok.changePercent >= 0 ? 'var(--profit)' : 'var(--loss)',
+                          fontSize: '10px',
+                        }}>
+                          {tok.changePercent >= 0 ? '+' : ''}{tok.changePercent.toFixed(1)}%
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="px-3 py-1.5 text-center" style={{ fontSize: '9px', color: 'var(--text-dim)' }}>
+                  powered by Elfa AI · 4h window
+                </div>
+              </div>
+            ) : (
+              <div className="px-3 py-4 text-center" style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
+                {elfaEnabled ? 'Loading...' : 'ELFA_API_KEY not set'}
+              </div>
             )}
           </div>
         </div>
