@@ -8,31 +8,48 @@ html {
   scroll-behavior: smooth;
 }
 
-/* ── TidalWars Design System: Neo Brutalism × Ocean ─────────────────────────── */
+/* ── TidalWars Design System: Neo Brutalism × Ocean Blue ────────────────────── */
 :root {
-  --bg: #07090f;
-  --surface: #0c1220;
-  --surface-2: #111928;
-  --surface-3: #16213a;
-  --teal: #00c8e0;
-  --teal-dim: #006a78;
-  --teal-glow: rgba(0, 200, 224, 0.12);
-  --profit: #00e87a;
-  --loss: #ff2d55;
-  --gold: #ffd700;
-  --text-muted: #4a6070;
-  --text-dim: #2a3a48;
+  /* Ocean palette — clearly blue, not black */
+  --bg:        #060f1e;
+  --surface:   #0a1a30;
+  --surface-2: #0d2240;
+  --surface-3: #102c52;
+  --surface-4: #143564;
+
+  /* Cyan / Teal accent */
+  --teal:      #00d8f5;
+  --teal-dim:  #0099bb;
+  --teal-glow: rgba(0, 216, 245, 0.14);
+  --teal-bg:   rgba(0, 216, 245, 0.07);
+
+  /* P&L colors */
+  --profit:    #00e87a;
+  --profit-bg: rgba(0, 232, 122, 0.08);
+  --loss:      #ff4466;
+  --loss-bg:   rgba(255, 68, 102, 0.08);
+  --gold:      #ffd700;
+
+  /* Text */
+  --text:       #d4eaf7;
+  --text-muted: #5b9ab8;
+  --text-dim:   #2a5a78;
+
+  /* Borders */
+  --border:      #000;
+  --border-soft: #1a3558;
 
   /* Neo Brutalism shadows */
-  --nb-shadow: 4px 4px 0px #000;
-  --nb-shadow-sm: 2px 2px 0px #000;
-  --nb-shadow-lg: 6px 6px 0px #000;
-  --nb-shadow-teal: 4px 4px 0px #004455;
+  --nb-shadow:      4px 4px 0px #000;
+  --nb-shadow-sm:   2px 2px 0px #000;
+  --nb-shadow-lg:   6px 6px 0px #000;
+  --nb-shadow-teal: 4px 4px 0px #003348;
+  --nb-shadow-blue: 4px 4px 0px #000d20;
 }
 
 body {
   background: var(--bg);
-  color: white;
+  color: var(--text);
 }
 
 /* ── Neo Brutalism Components ───────────────────────────────────────────────── */
@@ -43,10 +60,16 @@ body {
   box-shadow: var(--nb-shadow);
 }
 
-.nb-card-accent {
+.nb-card-teal {
   background: var(--surface);
   border: 2px solid var(--teal);
   box-shadow: var(--nb-shadow-teal);
+}
+
+.nb-card-glow {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 2px solid #000;
+  box-shadow: var(--nb-shadow), inset 0 0 40px var(--teal-glow);
 }
 
 .nb-btn {
@@ -84,14 +107,15 @@ body {
 .nb-btn-primary { background: var(--teal); color: #000; }
 .nb-btn-green   { background: var(--profit); color: #000; }
 .nb-btn-red     { background: var(--loss); color: #fff; }
-.nb-btn-ghost   { background: var(--surface-2); color: #fff; border-color: #1a2535; box-shadow: 3px 3px 0px #000; }
+.nb-btn-ghost   { background: var(--surface-2); color: var(--text); border-color: var(--border-soft); box-shadow: 3px 3px 0px #000; }
 .nb-btn-gold    { background: var(--gold); color: #000; }
+.nb-btn-ocean   { background: var(--surface-3); color: var(--teal); border-color: var(--teal); box-shadow: var(--nb-shadow-teal); }
 
 .nb-input {
-  background: var(--bg);
-  border: 2px solid #1a2535;
-  box-shadow: inset 2px 2px 0px #000;
-  color: white;
+  background: var(--surface-2);
+  border: 2px solid var(--border-soft);
+  box-shadow: inset 1px 1px 0px rgba(0,0,0,0.6);
+  color: var(--text);
   padding: 8px 12px;
   font-family: inherit;
   font-size: 14px;
@@ -102,16 +126,15 @@ body {
 
 .nb-input:focus {
   border-color: var(--teal);
-  box-shadow: inset 2px 2px 0px #000, 0 0 0 1px var(--teal);
+  box-shadow: inset 1px 1px 0px rgba(0,0,0,0.6), 0 0 0 1px var(--teal);
 }
 
-.nb-input::placeholder { color: var(--text-muted); }
+.nb-input::placeholder { color: var(--text-dim); }
 
 .nb-select {
-  background: var(--bg);
-  border: 2px solid #1a2535;
-  box-shadow: inset 2px 2px 0px #000;
-  color: white;
+  background: var(--surface-2);
+  border: 2px solid var(--border-soft);
+  color: var(--text);
   padding: 8px 12px;
   font-family: inherit;
   font-size: 14px;
@@ -121,19 +144,30 @@ body {
   appearance: none;
 }
 
-.nb-select:focus {
-  border-color: var(--teal);
+.nb-select:focus { border-color: var(--teal); }
+
+/* ── Ticker tape animation ────────────────────────────────────────────────── */
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
+
+.ticker-tape {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: ticker 30s linear infinite;
+}
+
+.ticker-tape:hover { animation-play-state: paused; }
 
 /* ── Live dot pulse ─────────────────────────────────────────────────────────── */
 @keyframes live-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
 }
 
 .live-dot {
-  width: 7px;
-  height: 7px;
+  width: 7px; height: 7px;
   background: var(--profit);
   border-radius: 50%;
   animation: live-pulse 1.4s ease-in-out infinite;
@@ -141,8 +175,7 @@ body {
 }
 
 .live-dot-teal {
-  width: 7px;
-  height: 7px;
+  width: 7px; height: 7px;
   background: var(--teal);
   border-radius: 50%;
   animation: live-pulse 1.4s ease-in-out infinite;
@@ -152,9 +185,19 @@ body {
 /* ── Custom scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: #1a2535; }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--teal-dim); }
 
-/* ── PnL colors ─────────────────────────────────────────────────────────────── */
+/* ── P&L colors ─────────────────────────────────────────────────────────────── */
 .profit { color: var(--profit); }
-.loss   { color: var(--loss); }
+.loss   { color: var(--loss);   }
+
+/* ── Badge ──────────────────────────────────────────────────────────────────── */
+.badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border: 1px solid #000;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

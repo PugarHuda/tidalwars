@@ -415,7 +415,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
   // ── Main Arena UI ─────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col text-white" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
 
       {/* Header */}
       <header style={{ background: 'var(--surface)', borderBottom: '2px solid #000', boxShadow: '0 2px 0px #000' }}
@@ -429,7 +429,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           <span className="font-black text-xs">WARS</span>
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="font-black text-sm text-white truncate">{comp.name}</h1>
+          <h1 className="font-black text-sm truncate" style={{ color: "var(--text)" }}>{comp.name}</h1>
           <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-muted)' }}>
             <span>{Object.keys(comp.participants ?? {}).length} traders</span>
             <span style={{
@@ -466,7 +466,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </span>
           )}
           <span className="text-xs hidden lg:flex items-center gap-1 px-1.5 py-0.5 font-black"
-            style={{ border: '1px solid #000', background: '#1a2535', color: 'var(--text-muted)', fontSize: '10px' }}
+            style={{ border: '1px solid #000', background: 'var(--border-soft)', color: 'var(--text-muted)', fontSize: '10px' }}
             title="Trade events tracked by Fuul">
             FUUL
           </span>
@@ -573,16 +573,16 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             <div className="flex gap-4 px-4 py-1.5 text-xs overflow-x-auto"
               style={{ borderBottom: '2px solid #000', background: 'var(--surface-2)' }}>
               {currentTicker.markPrice > 0 && (
-                <span style={{ color: 'var(--text-muted)' }}>Mark <span className="text-white font-bold">${fmtPrice(currentTicker.markPrice, symbol)}</span></span>
+                <span style={{ color: 'var(--text-muted)' }}>Mark <span className="font-bold" style={{ color: "var(--text)" }}>${fmtPrice(currentTicker.markPrice, symbol)}</span></span>
               )}
               {currentTicker.indexPrice > 0 && (
-                <span style={{ color: 'var(--text-muted)' }}>Index <span className="text-white font-bold">${fmtPrice(currentTicker.indexPrice, symbol)}</span></span>
+                <span style={{ color: 'var(--text-muted)' }}>Index <span className="font-bold" style={{ color: "var(--text)" }}>${fmtPrice(currentTicker.indexPrice, symbol)}</span></span>
               )}
               {currentTicker.openInterest > 0 && (
-                <span style={{ color: 'var(--text-muted)' }}>OI <span className="text-white font-bold">${fmtBig(currentTicker.openInterest)}</span></span>
+                <span style={{ color: 'var(--text-muted)' }}>OI <span className="font-bold" style={{ color: "var(--text)" }}>${fmtBig(currentTicker.openInterest)}</span></span>
               )}
               {currentTicker.volume24h > 0 && (
-                <span style={{ color: 'var(--text-muted)' }}>24h Vol <span className="text-white font-bold">${fmtBig(currentTicker.volume24h)}</span></span>
+                <span style={{ color: 'var(--text-muted)' }}>24h Vol <span className="font-bold" style={{ color: "var(--text)" }}>${fmtBig(currentTicker.volume24h)}</span></span>
               )}
               {currentTicker.fundingRate !== 0 && (
                 <span style={{ color: 'var(--text-muted)' }}>Funding{' '}
@@ -637,10 +637,10 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
               {/* Order info */}
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-                <span>Notional <span className="font-bold text-white">
+                <span>Notional <span className="font-bold" style={{ color: "var(--text)" }}>
                   ${((prices[symbol] ?? 0) * parseFloat(amount || '0') * leverage).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </span></span>
-                <span>Margin <span className="font-bold text-white">
+                <span>Margin <span className="font-bold" style={{ color: "var(--text)" }}>
                   ${((prices[symbol] ?? 0) * parseFloat(amount || '0') / leverage).toFixed(2)}
                 </span></span>
                 {currentTicker?.fundingRate !== undefined && currentTicker.fundingRate !== 0 && (
@@ -776,7 +776,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                     <span className="text-xs px-1 py-0.5 font-black" style={{
                       background: event.action === 'open'
                         ? (event.side === 'bid' ? 'var(--profit)' : 'var(--loss)')
-                        : '#1a2535',
+                        : 'var(--border-soft)',
                       color: event.action === 'open' ? (event.side === 'bid' ? '#000' : '#fff') : 'var(--text-muted)',
                       border: '1px solid #000',
                       fontSize: '10px',
@@ -819,7 +819,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                 </span>
               </div>
               <span className="text-xs font-black px-1" style={{
-                background: elfaEnabled ? 'var(--gold)' : '#1a2535',
+                background: elfaEnabled ? 'var(--gold)' : 'var(--border-soft)',
                 color: elfaEnabled ? '#000' : 'var(--text-dim)',
                 border: '1px solid #000',
                 fontSize: '9px',
