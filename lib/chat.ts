@@ -51,7 +51,11 @@ export async function getChatMessages(competitionId: string): Promise<ChatMessag
   const raw = await klrange(`chat:${competitionId}`, 0, MAX_MESSAGES - 1)
   const parsed: ChatMessage[] = []
   for (const s of raw) {
-    try { parsed.push(JSON.parse(s) as ChatMessage) } catch { /* skip corrupt */ }
+    try {
+      // Upstash may auto-deserialize; handle both string and object
+      const msg = typeof s === 'object' ? (s as ChatMessage) : (JSON.parse(s) as ChatMessage)
+      parsed.push(msg)
+    } catch { /* skip corrupt */ }
   }
   mem.set(competitionId, parsed)
   return parsed

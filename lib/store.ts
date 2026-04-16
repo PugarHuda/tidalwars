@@ -43,10 +43,10 @@ async function saveEvents(id: string, events: TradeEvent[]): Promise<void> {
 async function loadComp(id: string): Promise<Competition | undefined> {
   let comp = competitions.get(id)
   if (comp) return comp
-  const raw = await kget<string>(`comp:${id}`)
+  const raw = await kget<unknown>(`comp:${id}`)
   if (!raw) return undefined
   try {
-    comp = JSON.parse(raw) as Competition
+    comp = typeof raw === 'object' ? (raw as Competition) : (JSON.parse(raw as string) as Competition)
     competitions.set(id, comp)
   } catch { return undefined }
   return comp
@@ -55,10 +55,12 @@ async function loadComp(id: string): Promise<Competition | undefined> {
 async function loadEvents(id: string): Promise<TradeEvent[]> {
   let events = tradeEvents.get(id)
   if (events) return events
-  const raw = await kget<string>(`events:${id}`)
+  const raw = await kget<unknown>(`events:${id}`)
   events = []
   if (raw) {
-    try { events = JSON.parse(raw) as TradeEvent[] } catch { /* corrupt */ }
+    try {
+      events = typeof raw === 'object' ? (raw as TradeEvent[]) : (JSON.parse(raw as string) as TradeEvent[])
+    } catch { /* corrupt */ }
   }
   tradeEvents.set(id, events)
   return events

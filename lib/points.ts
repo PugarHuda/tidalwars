@@ -52,9 +52,11 @@ const POINTS_KEY = 'tidal_points'
 const LEADERBOARD_KEY = 'tidal_points_leaderboard'
 
 export async function getPoints(userId: string): Promise<TidalPoints | null> {
-  const raw = await kget<string>(`${POINTS_KEY}:${userId}`)
+  // Upstash Redis auto-deserializes JSON so raw may already be an object
+  const raw = await kget<unknown>(`${POINTS_KEY}:${userId}`)
   if (!raw) return null
-  try { return JSON.parse(raw) as TidalPoints } catch { return null }
+  if (typeof raw === 'object') return raw as TidalPoints
+  try { return JSON.parse(raw as string) as TidalPoints } catch { return null }
 }
 
 export async function addPointsResult(params: {
