@@ -40,7 +40,7 @@ function normalizeTrendingToken(item: Record<string, unknown>, i: number): Trend
     token: String(item.token ?? item.name ?? symbol),
     symbol,
     mentionCount: Number(
-      item.mentions_count ?? item.mention_count ?? item.mentions ?? item.count ?? 0
+      item.current_count ?? item.mentions_count ?? item.mention_count ?? item.mentions ?? item.count ?? 0
     ),
     smartMentionCount: item.smart_mentions_count != null
       ? Number(item.smart_mentions_count)
@@ -77,8 +77,15 @@ export async function getTrendingTokens(
       return []
     }
     const json = await res.json()
-    const raw: Record<string, unknown>[] =
-      json?.data ?? json?.tokens ?? (Array.isArray(json) ? json : [])
+    // Elfa v2 shape: { success, data: { total, page, pageSize, data: [...] } }
+    // Fallback shapes for v1/legacy: json.data (array), json.tokens, or bare array
+    const raw: Record<string, unknown>[] = Array.isArray(json?.data?.data)
+      ? json.data.data
+      : Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json?.tokens)
+          ? json.tokens
+          : Array.isArray(json) ? json : []
     return raw
       .map(normalizeTrendingToken)
       .filter(t => t.symbol.length > 0)

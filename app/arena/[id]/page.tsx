@@ -520,13 +520,18 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </span>
           </div>
           {lastPacificaId && (
-            <span className="text-xs hidden lg:flex items-center gap-1" style={{ color: 'var(--teal)' }} title={`Pacifica: ${lastPacificaId}`}>
+            <span className="text-xs hidden lg:flex items-center gap-1" style={{ color: 'var(--teal)' }} title={`Pacifica order: ${lastPacificaId}`}>
               <Zap className="w-3 h-3" /> on-chain
             </span>
           )}
           <span className="text-xs hidden lg:flex items-center gap-1 px-1.5 py-0.5 font-black"
+            style={{ border: '1px solid #000', background: 'var(--teal)', color: '#000', fontSize: '10px' }}
+            title="Orders routed with builder_code=tidalwars — earns builder rewards on Pacifica">
+            ⬡ BUILDER
+          </span>
+          <span className="text-xs hidden lg:flex items-center gap-1 px-1.5 py-0.5 font-black"
             style={{ border: '1px solid #000', background: 'var(--border-soft)', color: 'var(--text-muted)', fontSize: '10px' }}
-            title="Trade events tracked by Fuul">
+            title="Trade events tracked via Fuul Events API">
             FUUL
           </span>
           <WalletButton />
@@ -587,16 +592,26 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               const isSelected = symbol === sym
               const change24h = ticker?.change24h ?? 0
               const fr = ticker?.fundingRate ?? 0
+              // Elfa-driven signal: is this symbol trending on social?
+              const elfaSignal = elfaTokens.find(t => t.symbol === sym)
+              const isTrending = Boolean(elfaSignal && elfaSignal.rank <= 10)
 
               return (
                 <button key={sym} onClick={() => setSymbol(sym)}
-                  className="flex flex-col items-start px-3 py-2 text-left min-w-[80px] flex-shrink-0 transition-all"
+                  className="flex flex-col items-start px-3 py-2 text-left min-w-[80px] flex-shrink-0 transition-all relative"
                   style={{
                     background: isSelected ? 'var(--teal)' : 'var(--surface)',
                     color: isSelected ? '#000' : 'white',
                     borderRight: '2px solid #000',
                     borderBottom: isSelected ? '2px solid var(--teal)' : undefined,
                   }}>
+                  {isTrending && (
+                    <span className="absolute top-0.5 right-1 text-[9px] font-black"
+                      title={`Trending on Elfa AI — #${elfaSignal?.rank}${elfaSignal?.changePercent != null ? ` · ${elfaSignal.changePercent >= 0 ? '+' : ''}${elfaSignal.changePercent.toFixed(0)}% mentions` : ''}`}
+                      style={{ color: isSelected ? '#000' : 'var(--gold)' }}>
+                      🔥
+                    </span>
+                  )}
                   <div className="flex items-center gap-1">
                     <span className="font-black text-xs">{sym}</span>
                     {change24h !== 0 && (
