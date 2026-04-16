@@ -28,7 +28,9 @@ export async function kset(key: string, value: unknown, ex = 86400): Promise<voi
     const client = r()
     if (!client) return
     await client.set(key, value, { ex })
-  } catch { /* silent — never block trade execution */ }
+  } catch (e) {
+    console.error('[kv.kset] failed', key, e instanceof Error ? e.message : e)
+  }
 }
 
 export async function ksadd(key: string, ...members: string[]): Promise<void> {
@@ -55,7 +57,9 @@ export async function kzadd(key: string, score: number, member: string, ttl = 86
     if (!client) return
     await client.zadd(key, { score, member })
     await client.expire(key, ttl)
-  } catch { /* silent */ }
+  } catch (e) {
+    console.error('[kv.kzadd] failed', key, e instanceof Error ? e.message : e)
+  }
 }
 
 export async function kzrevrange(key: string, start = 0, stop = 9): Promise<{ member: string; score: number }[]> {
