@@ -10,29 +10,32 @@ const FALLBACK_PRICES: Record<string, number> = {
   BONK: 0.000025,
 }
 
+interface PacificaPriceRow {
+  symbol: string
+  mark?: string
+  mid?: string
+  oracle?: string
+}
+
 export async function GET() {
   try {
-    const res = await fetch('https://test-api.pacifica.fi/api/v1/markets', {
-      next: { revalidate: 10 },
+    const res = await fetch('https://test-api.pacifica.fi/api/v1/info/prices', {
+      next: { revalidate: 5 },
     })
-
     if (res.ok) {
-      const data = await res.json()
+      const json = await res.json()
+      const rows: PacificaPriceRow[] = Array.isArray(json?.data) ? json.data : []
       const prices: Record<string, number> = {}
-      if (Array.isArray(data)) {
-        data.forEach((m: { symbol: string; mark_price?: string; last_price?: string }) => {
-          const price = parseFloat(m.mark_price ?? m.last_price ?? '0')
-          if (price > 0) prices[m.symbol] = price
-        })
+      for (const row of rows) {
+        const price = parseFloat(row.mark ?? row.mid ?? row.oracle ?? '0')
+        if (price > 0 && row.symbol) prices[row.symbol] = price
       }
       if (Object.keys(prices).length > 0) {
         updateLastKnownPrices(prices)
         return NextResponse.json(prices)
       }
     }
-  } catch {
-    // fall through to fallback
-  }
+  } catch { /* fall through */ }
 
   updateLastKnownPrices(FALLBACK_PRICES)
   return NextResponse.json(FALLBACK_PRICES)

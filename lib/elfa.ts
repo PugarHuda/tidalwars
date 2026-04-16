@@ -31,7 +31,7 @@ function headers() {
   return { 'x-elfa-api-key': process.env.ELFA_API_KEY ?? '' }
 }
 
-/** Normalize the token object across possible Elfa v2 response shapes */
+/** Normalize across all known v1/v2 field name variants */
 function normalizeTrendingToken(item: Record<string, unknown>, i: number): TrendingToken {
   const symbol = String(
     item.symbol ?? item.token ?? item.name ?? item.ticker ?? ''
@@ -39,9 +39,12 @@ function normalizeTrendingToken(item: Record<string, unknown>, i: number): Trend
   return {
     token: String(item.token ?? item.name ?? symbol),
     symbol,
-    mentionCount: Number(item.mention_count ?? item.mentions ?? item.count ?? 0),
-    smartMentionCount: item.smart_mention_count != null
-      ? Number(item.smart_mention_count) : undefined,
+    mentionCount: Number(
+      item.mentions_count ?? item.mention_count ?? item.mentions ?? item.count ?? 0
+    ),
+    smartMentionCount: item.smart_mentions_count != null
+      ? Number(item.smart_mentions_count)
+      : item.smart_mention_count != null ? Number(item.smart_mention_count) : undefined,
     changePercent: item.change_percent != null
       ? Number(item.change_percent)
       : item.change_24h != null ? Number(item.change_24h) : undefined,
@@ -50,19 +53,24 @@ function normalizeTrendingToken(item: Record<string, unknown>, i: number): Trend
 }
 
 /**
- * Fetch trending tokens from Elfa AI social intelligence.
- * Returns [] if ELFA_API_KEY is not set or on any error.
+ * Fetch trending tokens from Elfa AI v2 /aggregations/trending-tokens.
+ * Returns [] if ELFA_API_KEY missing or request fails.
  */
 export async function getTrendingTokens(
-  timeWindow: '1h' | '4h' | '24h' = '4h',
+  timeWindow: '1h' | '4h' | '24h' | '7d' = '4h',
   limit = 10
 ): Promise<TrendingToken[]> {
   if (!process.env.ELFA_API_KEY) return []
   try {
-    const url = `${ELFA_BASE}/aggregations/trending-tokens?timeWindow=${timeWindow}&limit=${limit}`
-    const res = await fetch(url, {
+    const params = new URLSearchParams({
+      timeWindow,
+      page: '1',
+      pageSize: String(limit),
+      minMentions: '5',
+    })
+    const res = await fetch(`${ELFA_BASE}/aggregations/trending-tokens?${params}`, {
       headers: headers(),
-      next: { revalidate: 300 }, // cache 5 min
+      next: { revalidate: 300 },
     })
     if (!res.ok) {
       console.warn('[Elfa] trending-tokens failed:', res.status)
@@ -74,6 +82,7 @@ export async function getTrendingTokens(
     return raw
       .map(normalizeTrendingToken)
       .filter(t => t.symbol.length > 0)
+      .slice(0, limit)
   } catch {
     return []
   }
