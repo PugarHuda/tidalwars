@@ -85,11 +85,10 @@ export async function addPointsResult(params: {
     totalPnl: current.totalPnl + params.pnl,
     updatedAt: Date.now(),
   }
-  // Pass object directly — Upstash handles JSON serialization
-  // TTL 30 days (Upstash free tier safe)
-  const TTL = 60 * 60 * 24 * 30
+  const TTL = 60 * 60 * 24 * 30 // 30 days
+  // Store as JSON string (same pattern as comp/events that demonstrably works)
   await Promise.all([
-    kset(`${POINTS_KEY}:${params.userId}`, next, TTL),
+    kset(`${POINTS_KEY}:${params.userId}`, JSON.stringify(next), TTL),
     kzadd(LEADERBOARD_KEY, next.totalPoints, params.userId, TTL),
   ])
   return { earned, totals: next }

@@ -6,7 +6,7 @@ export async function GET() {
   const key = `debug:${Date.now()}`
   const obj = { hello: 'world', at: Date.now() }
 
-  await kset(key, obj, 60) // 1 minute TTL
+  await kset(key, JSON.stringify(obj), 60) // 1 min TTL, pass string
   const readBack = await kget<unknown>(key)
 
   await kzadd('debug:zset', 42, 'member-a', 60)
