@@ -28,16 +28,17 @@ export async function GET(_req: NextRequest) {
   }
 
   const pubkey = keypair.publicKey.toBase58()
+  const builderCode = (process.env.PACIFICA_BUILDER_CODE ?? 'tidalwars').trim()
   const [accountInfo, builderResult] = await Promise.all([
     getAccountInfo(pubkey),
-    approveBuilderCode(keypair, process.env.PACIFICA_BUILDER_CODE ?? 'tidalwars'),
+    approveBuilderCode(keypair, builderCode, '0.001'),
   ])
 
   return NextResponse.json({
     pubkey,
-    expectedPubkey: process.env.PACIFICA_DEMO_PUBLIC_KEY,
+    expectedPubkey: process.env.PACIFICA_DEMO_PUBLIC_KEY?.trim(),
     account: accountInfo,
-    builderCode: process.env.PACIFICA_BUILDER_CODE,
+    builderCode,
     builderCodeApproval: builderResult,
     diag,
   })
