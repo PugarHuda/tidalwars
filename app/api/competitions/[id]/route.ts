@@ -5,6 +5,7 @@ import {
 } from '@/lib/store'
 import { placeMarketOrder, closePosition, getDemoKeypair } from '@/lib/pacifica'
 import { trackTradeOpened, trackTradeClosed, trackCompetitionJoined, trackCompetitionWon } from '@/lib/fuul'
+import { addPointsResult } from '@/lib/points'
 import { randomUUID } from 'crypto'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -31,11 +32,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .map(p => ({ userId: p.userId, displayName: p.displayName, totalPnl: p.realizedPnl, roi: (p.realizedPnl / 10000) * 100 }))
       .sort((a, b) => b.totalPnl - a.totalPnl)
       .map((e, i) => ({ ...e, rank: i + 1 }))
+
+    // Award Tidal Points to every participant based on final rank + ROI
+    const pointsAwards = await Promise.all(final.map(async entry => {
+      const participant = comp.participants[entry.userId]
+      const { earned, totals } = await addPointsResult({
+        userId: entry.userId,
+        displayName: entry.displayName,
+        walletAddress: participant?.walletAddress,
+        rank: entry.rank,
+        totalParticipants: final.length,
+        roi: entry.roi,
+        pnl: entry.totalPnl,
+      })
+      return { userId: entry.userId, earned, totalPoints: totals.totalPoints }
+    }))
+
     if (final.length > 0) {
       const winner = comp.participants[final[0].userId]
       trackCompetitionWon({ userId: final[0].userId, walletAddress: winner?.walletAddress, pnl: final[0].totalPnl })
     }
-    return NextResponse.json({ settled: true, final })
+    return NextResponse.json({ settled: true, final, pointsAwards })
   }
 
   // ── Trade ────────────────────────────────────────────────────────────────────

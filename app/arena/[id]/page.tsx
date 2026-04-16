@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import {
   Trophy, TrendingUp, TrendingDown, Clock, ArrowLeft, Zap,
   Activity, Wifi, WifiOff, BarChart2, Globe, Waves, Sparkles,
-  MessageCircle, Send, ExternalLink,
+  MessageCircle, Send, ExternalLink, Copy,
 } from 'lucide-react'
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
@@ -13,6 +13,7 @@ import { usePacificaWs } from '@/lib/pacificaWs'
 import type { TrendingToken } from '@/lib/elfa'
 import type { ChatMessage } from '@/lib/chat'
 import { ACHIEVEMENTS, loadUnlocked, saveUnlocked, type Achievement } from '@/lib/achievements'
+import { captainFor } from '@/lib/points'
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
@@ -446,17 +447,23 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const currentTicker = tickers[`${symbol}-PERP`] ?? tickers[symbol] ?? null
   const priceHistory = usePriceHistory(prices, symbol)
 
+  const [pointsAwarded, setPointsAwarded] = useState<{ earned: number; totalPoints: number } | null>(null)
+
   const triggerSettle = useCallback(async (settlePrices: Record<string, number>) => {
     if (settled) return
     setSettled(true)
     try {
-      await fetch(`/api/competitions/${id}`, {
+      const res = await fetch(`/api/competitions/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'settle', prices: settlePrices }),
       })
+      const data = await res.json()
+      const mine = (data.pointsAwards as { userId: string; earned: number; totalPoints: number }[] | undefined)
+        ?.find(p => p.userId === userId)
+      if (mine) setPointsAwarded({ earned: mine.earned, totalPoints: mine.totalPoints })
     } catch { /* ignore */ }
-  }, [id, settled])
+  }, [id, settled, userId])
 
   useEffect(() => {
     if (comp?.status === 'ended' && !settled) triggerSettle(prices)
@@ -572,6 +579,21 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     } finally {
       setChatSending(false)
     }
+  }
+
+  // Copy trade from opponent's feed event — replicate exact symbol/side/leverage/amount
+  function copyTrade(ev: TradeEvent) {
+    if (!userId || ev.action !== 'open') return
+    setSymbol(ev.symbol)
+    setSide(ev.side)
+    setAmount(String(ev.amount))
+    setLeverage(ev.leverage)
+    // Flash a quick toast
+    setTradeMsg(`📋 Copied ${ev.displayName}'s ${ev.side === 'bid' ? 'LONG' : 'SHORT'} ${ev.amount} ${ev.symbol} · review & execute`)
+    setTimeout(() => setTradeMsg(''), 4000)
+    // Scroll to trade form
+    const form = document.getElementById('trade-form')
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   async function sendQuickReaction(emoji: string) {
@@ -691,6 +713,43 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               </div>
               <div className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{displayWinner.roi.toFixed(2)}% ROI</div>
             </div>
+
+            {/* YOUR REWARDS card */}
+            {pointsAwarded && (
+              <div className="p-4 mb-4" style={{
+                background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%)',
+                border: '2px solid var(--teal)', boxShadow: '4px 4px 0px #000',
+              }}>
+                <div className="text-xs font-black tracking-widest mb-2" style={{ color: 'var(--teal)' }}>🏅 YOUR REWARDS</div>
+                <div className="grid grid-cols-2 gap-3 text-left">
+                  <div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Earned this arena</div>
+                    <div className="text-2xl font-black" style={{ color: 'var(--teal)' }}>
+                      +{pointsAwarded.earned.toLocaleString()}
+                    </div>
+                    <div className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Tidal Points</div>
+                  </div>
+                  <div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Captain Tier</div>
+                    {(() => {
+                      const cap = captainFor(pointsAwarded.totalPoints)
+                      return (
+                        <>
+                          <div className="text-2xl">{cap.emoji}</div>
+                          <div className="text-sm font-black tracking-wider" style={{ color: 'var(--gold)' }}>{cap.title}</div>
+                          <div className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                            {pointsAwarded.totalPoints.toLocaleString()} total pts
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
+                <div className="text-xs mt-2 pt-2" style={{ borderTop: '1px solid var(--border-soft)', color: 'var(--text-dim)', fontSize: '10px' }}>
+                  Points persist across arenas. Climb the Hall of Fame to become a Kraken 🐙
+                </div>
+              </div>
+            )}
 
             <div className="nb-card overflow-hidden mb-4">
               {leaderboard.map((e, i) => {
@@ -1102,7 +1161,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
           {/* Trade form */}
           {!isEnded ? (
-            <div className="p-4" style={{ borderBottom: '2px solid #000' }}>
+            <div id="trade-form" className="p-4" style={{ borderBottom: '2px solid #000' }}>
               {/* Mode selector */}
               <div className="grid grid-cols-2 gap-0 mb-3 text-xs" style={{ border: '2px solid #000' }}>
                 <button onClick={() => setTradeMode('virtual')}
@@ -1427,6 +1486,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                         </span>
                       )}
                     </div>
+                    {/* Copy trade — Social & Gamification track feature */}
+                    {event.action === 'open' && event.userId !== userId && userId && !isEnded && (
+                      <button onClick={() => copyTrade(event)}
+                        className="mt-1.5 w-full flex items-center justify-center gap-1 py-1 text-xs font-black tracking-wider transition-colors"
+                        style={{
+                          background: 'var(--surface-3)',
+                          color: 'var(--teal)',
+                          border: '1px solid var(--teal)',
+                          fontSize: '10px',
+                        }}
+                        title={`Copy ${event.displayName}'s ${event.side === 'bid' ? 'LONG' : 'SHORT'}`}>
+                        <Copy className="w-2.5 h-2.5" /> COPY TRADE
+                      </button>
+                    )}
                   </div>
                 ))
               )}

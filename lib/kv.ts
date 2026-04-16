@@ -49,6 +49,29 @@ export async function ksmembers(key: string): Promise<string[]> {
   } catch { return [] }
 }
 
+export async function kzadd(key: string, score: number, member: string, ttl = 86400 * 90): Promise<void> {
+  try {
+    const client = r()
+    if (!client) return
+    await client.zadd(key, { score, member })
+    await client.expire(key, ttl)
+  } catch { /* silent */ }
+}
+
+export async function kzrevrange(key: string, start = 0, stop = 9): Promise<{ member: string; score: number }[]> {
+  try {
+    const client = r()
+    if (!client) return []
+    const members = await client.zrange(key, start, stop, { rev: true, withScores: true }) as unknown[] | null
+    if (!members || members.length === 0) return []
+    const out: { member: string; score: number }[] = []
+    for (let i = 0; i < members.length; i += 2) {
+      out.push({ member: String(members[i]), score: Number(members[i + 1]) })
+    }
+    return out
+  } catch { return [] }
+}
+
 export async function klpush(key: string, value: string, cap = 100, ttl = 86400): Promise<void> {
   try {
     const client = r()

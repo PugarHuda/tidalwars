@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trophy, Clock, Users, Zap, Globe, Wifi, WifiOff, Waves, ChevronRight } from 'lucide-react'
+import { Trophy, Clock, Users, Zap, Globe, Wifi, WifiOff, Waves, ChevronRight, Crown } from 'lucide-react'
 import { Competition } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
 import OceanBubbles from '@/components/OceanBubbles'
@@ -25,6 +25,10 @@ export default function Home() {
   const [displayName, setDisplayName] = useState('')
   const [creating, setCreating] = useState(false)
   const [globalStats, setGlobalStats] = useState<{ totalTraders: number; globalTrades: number; totalCompetitions: number } | null>(null)
+  const [topCaptains, setTopCaptains] = useState<Array<{
+    userId: string; displayName: string; totalPoints: number; wins: number; arenasEntered: number; bestRoi: number
+    captain: { emoji: string; title: string }
+  }>>([])
 
   const { tickers, wsConnected } = usePacificaWs()
 
@@ -35,6 +39,7 @@ export default function Home() {
 
     fetch('/api/competitions').then(r => r.json()).then(setCompetitions).catch(() => {})
     fetch('/api/leaderboard/global').then(r => r.json()).then(d => setGlobalStats(d.stats)).catch(() => {})
+    fetch('/api/points/top').then(r => r.json()).then(d => setTopCaptains(d.captains ?? [])).catch(() => {})
     const interval = setInterval(() => {
       fetch('/api/competitions').then(r => r.json()).then(setCompetitions).catch(() => {})
     }, 5000)
@@ -334,6 +339,45 @@ export default function Home() {
             ))}
           </div>
         </div>
+
+        {/* ── Hall of Captains (persistent points leaderboard) ──────────── */}
+        {topCaptains.length > 0 && (
+          <div className="mt-10 mb-10">
+            <div className="flex items-center gap-2 mb-4">
+              <Crown className="w-4 h-4" style={{ color: 'var(--gold)' }} />
+              <span className="text-sm font-black tracking-widest uppercase" style={{ color: 'var(--gold)' }}>Hall of Captains</span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· Tidal Points leaderboard across all arenas</span>
+            </div>
+            <div className="nb-card overflow-hidden">
+              {topCaptains.slice(0, 10).map((c, i) => (
+                <div key={c.userId} className="flex items-center gap-3 px-4 py-2.5"
+                  style={{
+                    borderBottom: i < Math.min(9, topCaptains.length - 1) ? '2px solid #000' : undefined,
+                    background: i === 0 ? 'rgba(255,215,0,0.04)' : undefined,
+                  }}>
+                  <span className="font-black text-sm w-6" style={{
+                    color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
+                  }}>#{i + 1}</span>
+                  <span className="text-xl">{c.captain.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-black text-sm truncate" style={{ color: 'var(--text)' }}>{c.displayName}</div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                      {c.captain.title} · {c.arenasEntered} arena{c.arenasEntered !== 1 ? 's' : ''}
+                      {c.wins > 0 ? ` · 🏆 ${c.wins} win${c.wins !== 1 ? 's' : ''}` : ''}
+                      {c.bestRoi > 0 ? ` · best ${c.bestRoi.toFixed(1)}% ROI` : ''}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-black" style={{ color: 'var(--teal)' }}>
+                      {c.totalPoints.toLocaleString()}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>points</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Tech footer ──────────────────────────────────────────────────── */}
         <div className="mt-12 pt-6" style={{ borderTop: '2px solid #000' }}>
