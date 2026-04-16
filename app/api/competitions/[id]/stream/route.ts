@@ -1,8 +1,28 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { getCompetition, getTradeEvents, getLastKnownPrices } from '@/lib/store'
+import { getCompetition, getTradeEvents, getLastKnownPrices, updateLastKnownPrices } from '@/lib/store'
 import { getChatMessages } from '@/lib/chat'
+
+const PACIFICA_REST = process.env.NEXT_PUBLIC_PACIFICA_REST_URL ?? 'https://test-api.pacifica.fi/api/v1'
+
+async function fetchLivePrices(): Promise<Record<string, number>> {
+  try {
+    const res = await fetch(`${PACIFICA_REST}/info/prices`, { next: { revalidate: 3 } })
+    if (!res.ok) return {}
+    const json = await res.json()
+    const rows = Array.isArray(json?.data) ? json.data : []
+    const prices: Record<string, number> = {}
+    for (const row of rows as { symbol: string; mark?: string; mid?: string }[]) {
+      const p = parseFloat(row.mark ?? row.mid ?? '0')
+      if (p > 0 && row.symbol) {
+        prices[row.symbol] = p
+        if (row.symbol.startsWith('k') && row.symbol.length > 1) prices[row.symbol.slice(1)] = p / 1000
+      }
+    }
+    return prices
+  } catch { return {} }
+}
 
 /**
  * Server-Sent Events endpoint for real-time competition updates.
@@ -38,7 +58,17 @@ export async function GET(
         send('competition', comp)
         send('feed', (await getTradeEvents(id)).slice(0, 30))
         send('chat', await getChatMessages(id))
-        send('prices', getLastKnownPrices())
+
+        // If last-known prices are empty/stale, fetch fresh from Pacifica
+        let prices = getLastKnownPrices()
+        if (Object.keys(prices).length === 0) {
+          const fresh = await fetchLivePrices()
+          if (Object.keys(fresh).length > 0) {
+            updateLastKnownPrices(fresh)
+            prices = fresh
+          }
+        }
+        send('prices', prices)
       }
 
       // Send immediately on connection

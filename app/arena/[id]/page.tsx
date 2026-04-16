@@ -150,21 +150,57 @@ const TideGauge = memo(function TideGauge({
       : ((myBest.price - lastP) / myBest.price) * 100
   }
 
+  // DYNAMIC wave — amplitude, speed, baseline driven by session change
+  const absPct = Math.abs(sessionChangePct)
+  const amplitude = Math.min(35, 8 + absPct * 3)             // 8-35 px — bigger swings = bigger waves
+  const waveDur = Math.max(1.8, 6 - absPct * 0.4).toFixed(1) // 6s → 1.8s — more volatile = faster
+  const baseline = sessionChangePct >= 0 ? 55 - Math.min(15, absPct * 2) : 65 + Math.min(15, absPct * 2)
+  const topA = (baseline - amplitude).toFixed(1)
+  const botA = (baseline + amplitude).toFixed(1)
+  const midA = baseline.toFixed(1)
+
+  // Also render a second wave layer offset for depth
+  const amp2 = amplitude * 0.6
+  const top2 = (baseline - amp2).toFixed(1)
+  const bot2 = (baseline + amp2).toFixed(1)
+
   return (
     <div style={{ borderBottom: '2px solid #000', background: 'var(--surface-2)', position: 'relative', overflow: 'hidden' }}>
-      {/* Animated wave background */}
-      <svg viewBox="0 0 400 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full" style={{ opacity: 0.08, pointerEvents: 'none' }}>
+      {/* DEEP ocean gradient background */}
+      <div className="absolute inset-0" style={{
+        background: `linear-gradient(180deg, var(--surface-3) 0%, var(--surface-2) 100%)`,
+        pointerEvents: 'none',
+      }} />
+
+      {/* Far wave (slow, less opacity) */}
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full" style={{ opacity: 0.12, pointerEvents: 'none' }}>
         <defs>
-          <linearGradient id="wave-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={tide.color} stopOpacity="0.6" />
+          <linearGradient id={`wave-far-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={tide.color} stopOpacity="0.5" />
             <stop offset="1" stopColor={tide.color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <path fill="url(#wave-gradient)">
-          <animate attributeName="d" dur="6s" repeatCount="indefinite"
-            values="M0,60 Q50,40 100,60 T200,60 T300,60 T400,60 L400,100 L0,100 Z;
-                    M0,60 Q50,80 100,60 T200,60 T300,60 T400,60 L400,100 L0,100 Z;
-                    M0,60 Q50,40 100,60 T200,60 T300,60 T400,60 L400,100 L0,100 Z" />
+        <path fill={`url(#wave-far-${symbol})`}>
+          <animate attributeName="d" dur={`${Number(waveDur) * 1.4}s`} repeatCount="indefinite"
+            values={`M0,${midA} Q50,${top2} 100,${midA} T200,${midA} T300,${midA} T400,${midA} L400,100 L0,100 Z;
+                     M0,${midA} Q50,${bot2} 100,${midA} T200,${midA} T300,${midA} T400,${midA} L400,100 L0,100 Z;
+                     M0,${midA} Q50,${top2} 100,${midA} T200,${midA} T300,${midA} T400,${midA} L400,100 L0,100 Z`} />
+        </path>
+      </svg>
+
+      {/* Near wave (fast, stronger opacity) */}
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full" style={{ opacity: 0.22, pointerEvents: 'none' }}>
+        <defs>
+          <linearGradient id={`wave-near-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={tide.color} stopOpacity="0.8" />
+            <stop offset="1" stopColor={tide.color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path fill={`url(#wave-near-${symbol})`}>
+          <animate attributeName="d" dur={`${waveDur}s`} repeatCount="indefinite"
+            values={`M0,${midA} Q50,${topA} 100,${midA} T200,${midA} T300,${midA} T400,${midA} L400,100 L0,100 Z;
+                     M0,${midA} Q50,${botA} 100,${midA} T200,${midA} T300,${midA} T400,${midA} L400,100 L0,100 Z;
+                     M0,${midA} Q50,${topA} 100,${midA} T200,${midA} T300,${midA} T400,${midA} L400,100 L0,100 Z`} />
         </path>
       </svg>
 
@@ -253,6 +289,13 @@ function useCompetitionStream(id: string) {
     if (feedRes) setFeed(feedRes)
     fetchLeaderboard(priceRes ?? {})
   }, [id, fetchLeaderboard])
+
+  // Seed prices IMMEDIATELY on mount so chart/UI doesn't wait for WS/SSE
+  useEffect(() => {
+    fetch('/api/prices').then(r => r.json()).then(p => {
+      if (p && typeof p === 'object') setRestPrices(prev => ({ ...prev, ...p }))
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     try {
@@ -438,6 +481,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     }
   }
 
+  async function sendQuickReaction(emoji: string) {
+    if (chatSending || !userId) return
+    setChatSending(true)
+    try {
+      await fetch(`/api/competitions/${id}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, displayName, text: emoji }),
+      })
+    } finally {
+      setChatSending(false)
+    }
+  }
+
   // Auto-scroll chat to bottom on new message
   useEffect(() => {
     if (rightTab === 'chat' && chatScrollRef.current) {
@@ -573,7 +630,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
   // ── Main Arena UI ─────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-screen flex flex-col ocean-depth">
 
       {/* Header */}
       <header style={{ background: 'var(--surface)', borderBottom: '2px solid #000', boxShadow: '0 2px 0px #000' }}
@@ -1016,8 +1073,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                   <div className="text-xs font-black tracking-widest" style={{ color: 'var(--text-dim)' }}>WAITING...</div>
                 </div>
               ) : (
-                feed.map(event => (
-                  <div key={event.id} className="px-3 py-2" style={{ borderBottom: '2px solid #000' }}>
+                feed.map((event, i) => (
+                  <div key={event.id} className={`px-3 py-2 ${i === 0 && Date.now() - event.timestamp < 4000 ? 'flash-new' : ''}`}
+                    style={{ borderBottom: '2px solid #000' }}>
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <span className="text-xs font-black truncate flex-1" style={{ color: 'var(--text)' }}>{event.displayName}</span>
                       <span className="text-xs px-1 py-0.5 font-black" style={{
@@ -1088,26 +1146,39 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               </div>
 
               {/* Chat input */}
-              <div className="p-2" style={{ borderTop: '2px solid #000', background: 'var(--surface-2)' }}>
+              <div style={{ borderTop: '2px solid #000', background: 'var(--surface-2)' }}>
                 {userId ? (
-                  <div className="flex gap-1.5">
-                    <input type="text" maxLength={200}
-                      className="nb-input text-xs"
-                      style={{ flex: 1 }}
-                      placeholder="Say something..."
-                      value={chatInput}
-                      onChange={e => setChatInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                      disabled={chatSending}
-                    />
-                    <button onClick={handleSendChat}
-                      disabled={chatSending || !chatInput.trim()}
-                      className="nb-btn nb-btn-primary px-2.5 py-1.5">
-                      <Send className="w-3 h-3" />
-                    </button>
-                  </div>
+                  <>
+                    {/* Ocean quick-reactions */}
+                    <div className="flex gap-1 px-2 pt-2 flex-wrap">
+                      {['🌊','🦈','🐋','🔥','💀','🚀','🎣'].map(e => (
+                        <button key={e} className="emoji-btn"
+                          onClick={() => sendQuickReaction(e)}
+                          disabled={chatSending}
+                          title={`Send ${e}`}>
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1.5 p-2">
+                      <input type="text" maxLength={200}
+                        className="nb-input text-xs"
+                        style={{ flex: 1 }}
+                        placeholder="Say something..."
+                        value={chatInput}
+                        onChange={e => setChatInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSendChat()}
+                        disabled={chatSending}
+                      />
+                      <button onClick={handleSendChat}
+                        disabled={chatSending || !chatInput.trim()}
+                        className="nb-btn nb-btn-primary px-2.5 py-1.5">
+                        <Send className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <div className="text-xs text-center py-1" style={{ color: 'var(--text-dim)' }}>
+                  <div className="text-xs text-center py-3" style={{ color: 'var(--text-dim)' }}>
                     Join the arena to chat
                   </div>
                 )}

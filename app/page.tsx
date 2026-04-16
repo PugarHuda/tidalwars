@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Trophy, Clock, Users, Zap, Globe, Wifi, WifiOff, Waves, ChevronRight } from 'lucide-react'
 import { Competition } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
+import OceanBubbles from '@/components/OceanBubbles'
 import { usePacificaWs } from '@/lib/pacificaWs'
 
 const DURATIONS = [
@@ -92,7 +93,7 @@ export default function Home() {
   const ended = competitions.filter(c => c.status === 'ended')
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-screen ocean-depth relative">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header style={{ background: 'var(--surface)', borderBottom: '2px solid #000', boxShadow: '0 4px 0px #000' }}
@@ -157,16 +158,18 @@ export default function Home() {
           </div>
         </div>
       </div>
+      <div className="wave-divider" />
 
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-5xl mx-auto px-6 py-10 relative">
 
         {/* ── Hero ────────────────────────────────────────────────────────── */}
         <div className="mb-10">
           <div className="nb-card-glow mb-4 p-8"
             style={{ borderColor: 'var(--teal)', boxShadow: 'var(--nb-shadow-teal)', position: 'relative', overflow: 'hidden' }}>
+            <OceanBubbles count={12} />
             <div style={{
               position: 'absolute', inset: 0, pointerEvents: 'none',
-              background: 'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(0,216,245,0.08) 0%, transparent 70%)',
+              background: 'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(0,216,245,0.12) 0%, transparent 70%)',
             }} />
             <div className="text-center relative">
               <div className="inline-flex items-center gap-2 px-3 py-1 mb-4 text-xs font-black tracking-[0.2em]"
@@ -176,6 +179,7 @@ export default function Home() {
               <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-4 leading-none" style={{ textShadow: '4px 4px 0px #000' }}>
                 <span style={{ color: 'var(--teal)' }}>TIDAL</span>
                 <span style={{ color: 'var(--text)' }}> WARS</span>
+                <span className="inline-block float-slow ml-2">🌊</span>
               </h1>
               <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
                 Join live trading competitions on Pacifica testnet. Open long/short positions
