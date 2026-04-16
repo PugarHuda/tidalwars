@@ -8,8 +8,9 @@ let _r: Redis | null = null
 
 function r(): Redis | null {
   if (_r) return _r
-  const url = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  // Defensively trim — shell `echo` through `vercel env add` appends \n
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim()
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
   if (!url || !token) return null
   _r = new Redis({ url, token })
   return _r
