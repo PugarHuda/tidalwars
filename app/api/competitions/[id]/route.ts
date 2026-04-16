@@ -40,7 +40,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // ── Trade ────────────────────────────────────────────────────────────────────
   if (body.action === 'open' || body.action === 'close') {
-    const { userId, displayName, symbol, side, amount, leverage, action, clientOrderId, currentPrice } = body
+    const { userId, displayName, symbol, side, amount, leverage, action, clientOrderId, currentPrice, mode } = body
+    const isTestnetMode = mode === 'testnet'
     if (!userId || !symbol || !side || !amount || !action) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       await addParticipantPosition(id, userId, { symbol, side, entryPrice: price, amount, leverage, openedAt: Date.now(), clientOrderId: orderId })
 
-      if (demoKeypair) {
+      if (demoKeypair && isTestnetMode) {
         pacificaResult = await placeMarketOrder({
           keypair: demoKeypair, symbol, side, amount: String(amount), clientOrderId: orderId,
         }).catch(() => ({ success: false, error: 'Network error' }))
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const pnl = priceDiff * position.amount * position.leverage
       await updateParticipantPnl(id, userId, pnl)
 
-      if (demoKeypair) {
+      if (demoKeypair && isTestnetMode) {
         pacificaResult = await closePosition({
           keypair: demoKeypair, symbol: position.symbol, side: position.side,
           amount: String(position.amount), clientOrderId: randomUUID(),

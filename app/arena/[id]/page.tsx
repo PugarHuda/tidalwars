@@ -388,6 +388,8 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [chatInput, setChatInput] = useState('')
   const [chatSending, setChatSending] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  const [tradeMode, setTradeMode] = useState<'virtual' | 'testnet'>('virtual')
+  const [tradeFlash, setTradeFlash] = useState<'long' | 'short' | 'close' | null>(null)
 
   const userId = typeof window !== 'undefined' ? localStorage.getItem('userId') ?? '' : ''
   const displayName = typeof window !== 'undefined' ? localStorage.getItem('displayName') ?? 'Anon' : 'Anon'
@@ -442,6 +444,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         body: JSON.stringify({
           action, userId, displayName, symbol, side,
           amount: parseFloat(amount), leverage, clientOrderId, currentPrice,
+          mode: tradeMode,
         }),
       })
       const data = await res.json()
@@ -449,12 +452,16 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         if (action === 'open') {
           const onChain = data.pacifica?.success
           setLastPacificaId(data.pacifica?.orderId ?? null)
+          setTradeFlash(side === 'bid' ? 'long' : 'short')
           setTradeMsg(onChain
-            ? `⬡ Opened on Pacifica — order ${data.pacifica.orderId?.slice(0, 10)}...`
-            : `⚡ Position opened · Competition P&L tracking live`)
+            ? `⬡ ORDER ON PACIFICA · ${data.pacifica.orderId?.slice(0, 10)}...`
+            : tradeMode === 'testnet'
+              ? `⚡ Virtual position opened · Pacifica testnet orderbook empty`
+              : `🌊 POSITION OPENED · ${side === 'bid' ? 'LONG' : 'SHORT'} ${amount} ${symbol} @ ${leverage}x`)
         } else {
           const pnl = data.pnl ?? 0
-          setTradeMsg(`${pnl >= 0 ? '🏆' : '📉'} Closed · PnL ${pnlPrefix(pnl)}$${Math.abs(pnl).toFixed(2)}`)
+          setTradeFlash('close')
+          setTradeMsg(`${pnl >= 0 ? '🏆 WINNING CLOSE' : '📉 CLOSED AT LOSS'} · PnL ${pnlPrefix(pnl)}$${Math.abs(pnl).toFixed(2)}`)
         }
       } else {
         setTradeMsg(`⚠ ${data.error}`)
@@ -462,6 +469,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     } finally {
       setTradeLoading(false)
       setTimeout(() => setTradeMsg(''), 5000)
+      setTimeout(() => setTradeFlash(null), 900)
     }
   }
 
@@ -629,8 +637,46 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   }
 
   // ── Main Arena UI ─────────────────────────────────────────────────────────
+  const flashColor = tradeFlash === 'long' ? 'rgba(0,232,122,0.18)'
+                   : tradeFlash === 'short' ? 'rgba(255,68,102,0.18)'
+                   : tradeFlash === 'close' ? 'rgba(255,215,0,0.18)' : null
+  const flashText = tradeFlash === 'long' ? '🌊 LONG OPENED'
+                  : tradeFlash === 'short' ? '🔻 SHORT OPENED'
+                  : tradeFlash === 'close' ? '⚓ POSITION CLOSED' : ''
+
   return (
-    <div className="min-h-screen flex flex-col ocean-depth">
+    <div className="min-h-screen flex flex-col ocean-depth relative">
+
+      {/* Full-screen trade flash overlay */}
+      {flashColor && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none"
+          style={{ background: flashColor, animation: 'fadeOut 0.9s ease-out forwards' }}
+        >
+          <div className="nb-card px-8 py-6 text-center"
+            style={{
+              background: 'var(--surface)',
+              borderColor: tradeFlash === 'long' ? 'var(--profit)'
+                         : tradeFlash === 'short' ? 'var(--loss)' : 'var(--gold)',
+              borderWidth: 3,
+              boxShadow: '8px 8px 0px #000',
+              animation: 'scaleIn 0.4s ease-out',
+            }}>
+            <div className="text-4xl font-black tracking-widest" style={{
+              color: tradeFlash === 'long' ? 'var(--profit)'
+                   : tradeFlash === 'short' ? 'var(--loss)' : 'var(--gold)',
+            }}>
+              {flashText}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes scaleIn { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+      `}</style>
+
 
       {/* Header */}
       <header style={{ background: 'var(--surface)', borderBottom: '2px solid #000', boxShadow: '0 2px 0px #000' }}
@@ -862,6 +908,36 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           {/* Trade form */}
           {!isEnded ? (
             <div className="p-4" style={{ borderBottom: '2px solid #000' }}>
+              {/* Mode selector */}
+              <div className="grid grid-cols-2 gap-0 mb-3 text-xs" style={{ border: '2px solid #000' }}>
+                <button onClick={() => setTradeMode('virtual')}
+                  className="py-2 font-black tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+                  style={{
+                    background: tradeMode === 'virtual' ? 'var(--teal)' : 'var(--surface)',
+                    color: tradeMode === 'virtual' ? '#000' : 'var(--text-muted)',
+                    borderRight: '2px solid #000',
+                  }}>
+                  🌊 VIRTUAL <span style={{ fontSize: '9px', opacity: 0.7 }}>$10K</span>
+                </button>
+                <button onClick={() => setTradeMode('testnet')}
+                  className="py-2 font-black tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+                  style={{
+                    background: tradeMode === 'testnet' ? 'var(--gold)' : 'var(--surface)',
+                    color: tradeMode === 'testnet' ? '#000' : 'var(--text-muted)',
+                  }}>
+                  ⬡ TESTNET <span style={{ fontSize: '9px', opacity: 0.7 }}>Real Orders</span>
+                </button>
+              </div>
+              <div className="text-xs mb-3 px-2 py-1.5" style={{
+                background: tradeMode === 'virtual' ? 'rgba(0,216,245,0.08)' : 'rgba(255,215,0,0.08)',
+                border: `1px solid ${tradeMode === 'virtual' ? 'var(--teal)' : 'var(--gold)'}`,
+                color: 'var(--text-muted)', fontSize: '10px', lineHeight: 1.4,
+              }}>
+                {tradeMode === 'virtual'
+                  ? 'Virtual $10k per arena. P&L tracks real Pacifica prices. No wallet or tokens needed.'
+                  : 'Real Pacifica orders signed with Ed25519 + builder_code=TIDALWARS. Testnet orderbook may be shallow.'}
+              </div>
+
               {/* Long / Short */}
               <div className="grid grid-cols-2 gap-0 mb-3" style={{ border: '2px solid #000', boxShadow: 'var(--nb-shadow-sm)' }}>
                 <button onClick={() => setSide('bid')}
