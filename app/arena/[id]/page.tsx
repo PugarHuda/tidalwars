@@ -58,38 +58,41 @@ function usePriceHistory(prices: Record<string, number>, symbol: string) {
   const pricesRef  = useRef(prices)
   const [snap, setSnap] = useState<PriceTick[]>([])
 
-  // Keep ref current so the interval always sees latest prices
   useEffect(() => { pricesRef.current = prices }, [prices])
 
-  // Add tick on every price change
-  useEffect(() => {
-    const price = prices[symbol]
+  const addTick = useCallback((sym: string, price: number | undefined) => {
     if (!price || price <= 0) return
-    if (!historyRef.current[symbol]) historyRef.current[symbol] = []
-    const arr = historyRef.current[symbol]
+    let arr = historyRef.current[sym]
+    if (!arr) {
+      // First price for this symbol: seed 2 identical ticks so chart renders immediately
+      const now = Date.now()
+      arr = [{ t: now - 1500, p: price }, { t: now, p: price }]
+      historyRef.current[sym] = arr
+      setSnap([...arr])
+      return
+    }
     const last = arr[arr.length - 1]
-    const now = Date.now()
-    if (last && last.p === price && now - last.t < 2000) return
-    arr.push({ t: now, p: price })
+    if (last && last.p === price && Date.now() - last.t < 1500) return
+    arr.push({ t: Date.now(), p: price })
     if (arr.length > MAX_TICKS) arr.shift()
     setSnap([...arr])
-  }, [prices, symbol])
+  }, [])
 
-  // Force-tick every 3s so chart fills even when price is static
+  // Sync snapshot when symbol changes (show existing history if any)
+  useEffect(() => {
+    const existing = historyRef.current[symbol]
+    if (existing) setSnap([...existing])
+    else setSnap([])
+    addTick(symbol, prices[symbol])
+  }, [symbol, prices, addTick])
+
+  // Force-tick every 2s to keep chart fresh even when prices are static
   useEffect(() => {
     const interval = setInterval(() => {
-      const price = pricesRef.current[symbol]
-      if (!price || price <= 0) return
-      if (!historyRef.current[symbol]) historyRef.current[symbol] = []
-      const arr = historyRef.current[symbol]
-      const last = arr[arr.length - 1]
-      if (last && last.p === price && Date.now() - last.t < 2500) return
-      arr.push({ t: Date.now(), p: price })
-      if (arr.length > MAX_TICKS) arr.shift()
-      setSnap(a => [...a.slice(-(MAX_TICKS - 1)), { t: Date.now(), p: price }])
-    }, 3000)
+      addTick(symbol, pricesRef.current[symbol])
+    }, 2000)
     return () => clearInterval(interval)
-  }, [symbol]) // stable — only reset when symbol changes
+  }, [symbol, addTick])
 
   return snap
 }
