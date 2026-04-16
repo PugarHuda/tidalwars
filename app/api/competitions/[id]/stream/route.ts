@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
 import { getCompetition, getTradeEvents, getLastKnownPrices } from '@/lib/store'
+import { getChatMessages } from '@/lib/chat'
 
 /**
  * Server-Sent Events endpoint for real-time competition updates.
@@ -36,6 +37,7 @@ export async function GET(
         }
         send('competition', comp)
         send('feed', (await getTradeEvents(id)).slice(0, 30))
+        send('chat', await getChatMessages(id))
         send('prices', getLastKnownPrices())
       }
 

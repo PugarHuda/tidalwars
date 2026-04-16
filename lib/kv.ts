@@ -49,6 +49,24 @@ export async function ksmembers(key: string): Promise<string[]> {
   } catch { return [] }
 }
 
+export async function klpush(key: string, value: string, cap = 100, ttl = 86400): Promise<void> {
+  try {
+    const client = r()
+    if (!client) return
+    await client.lpush(key, value)
+    await client.ltrim(key, 0, cap - 1)
+    await client.expire(key, ttl)
+  } catch { /* silent */ }
+}
+
+export async function klrange(key: string, start = 0, stop = -1): Promise<string[]> {
+  try {
+    const client = r()
+    if (!client) return []
+    return ((await client.lrange(key, start, stop)) ?? []) as string[]
+  } catch { return [] }
+}
+
 export function isKvEnabled(): boolean {
   return Boolean(process.env.UPSTASH_REDIS_REST_URL)
 }

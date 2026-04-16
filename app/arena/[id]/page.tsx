@@ -4,11 +4,13 @@ import { useRouter } from 'next/navigation'
 import {
   Trophy, TrendingUp, TrendingDown, Clock, ArrowLeft, Zap,
   Activity, Wifi, WifiOff, BarChart2, Globe, Waves, Sparkles,
+  MessageCircle, Send, ExternalLink,
 } from 'lucide-react'
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
 import { usePacificaWs } from '@/lib/pacificaWs'
 import type { TrendingToken } from '@/lib/elfa'
+import type { ChatMessage } from '@/lib/chat'
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
@@ -166,11 +168,12 @@ const PriceChart = memo(function PriceChart({
 
 // ── SSE hook ──────────────────────────────────────────────────────────────────
 
-interface SsePayload { type: 'competition' | 'feed' | 'prices' | 'error'; data: unknown }
+interface SsePayload { type: 'competition' | 'feed' | 'chat' | 'prices' | 'error'; data: unknown }
 
 function useCompetitionStream(id: string) {
   const [comp, setComp] = useState<Competition | null>(null)
   const [feed, setFeed] = useState<TradeEvent[]>([])
+  const [chat, setChat] = useState<ChatMessage[]>([])
   const [restPrices, setRestPrices] = useState<Record<string, number>>({})
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loadError, setLoadError] = useState(false)
@@ -205,6 +208,7 @@ function useCompetitionStream(id: string) {
           const msg: SsePayload = JSON.parse(e.data)
           if (msg.type === 'competition') setComp(msg.data as Competition)
           if (msg.type === 'feed') setFeed(msg.data as TradeEvent[])
+          if (msg.type === 'chat') setChat(msg.data as ChatMessage[])
           if (msg.type === 'error') pollRest() // competition not found on this instance
           if (msg.type === 'prices') {
             const prices = msg.data as Record<string, number>
@@ -232,7 +236,7 @@ function useCompetitionStream(id: string) {
     return () => clearTimeout(t)
   }, [comp])
 
-  return { comp, feed, restPrices, leaderboard, sseConnected: connected, loadError }
+  return { comp, feed, chat, restPrices, leaderboard, sseConnected: connected, loadError }
 }
 
 // ── Elfa AI Trending hook ─────────────────────────────────────────────────────
@@ -267,7 +271,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const { id } = use(params)
   const router = useRouter()
 
-  const { comp, feed, restPrices, leaderboard, sseConnected, loadError } = useCompetitionStream(id)
+  const { comp, feed, chat, restPrices, leaderboard, sseConnected, loadError } = useCompetitionStream(id)
   const { tickers, wsConnected } = usePacificaWs()
   const { tokens: elfaTokens, enabled: elfaEnabled } = useElfaTrending()
 
@@ -281,6 +285,10 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [tradeLoading, setTradeLoading] = useState(false)
   const [tradeMsg, setTradeMsg] = useState('')
   const [lastPacificaId, setLastPacificaId] = useState<string | null>(null)
+  const [rightTab, setRightTab] = useState<'feed' | 'chat'>('feed')
+  const [chatInput, setChatInput] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
 
   const userId = typeof window !== 'undefined' ? localStorage.getItem('userId') ?? '' : ''
   const displayName = typeof window !== 'undefined' ? localStorage.getItem('displayName') ?? 'Anon' : 'Anon'
@@ -357,6 +365,29 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       setTimeout(() => setTradeMsg(''), 5000)
     }
   }
+
+  async function handleSendChat() {
+    const text = chatInput.trim()
+    if (!text || chatSending || !userId) return
+    setChatSending(true)
+    try {
+      await fetch(`/api/competitions/${id}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, displayName, text }),
+      })
+      setChatInput('')
+    } finally {
+      setChatSending(false)
+    }
+  }
+
+  // Auto-scroll chat to bottom on new message
+  useEffect(() => {
+    if (rightTab === 'chat' && chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    }
+  }, [chat.length, rightTab])
 
   const myEntry = leaderboard.find(e => e.userId === userId)
   const myPositions: Position[] = comp?.participants?.[userId]?.positions ?? []
@@ -669,6 +700,34 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </div>
           )}
 
+          {/* Virtual balance + faucet banner */}
+          {!isEnded && (
+            <div className="flex items-center justify-between px-4 py-2 text-xs"
+              style={{ borderBottom: '2px solid #000', background: 'var(--surface-2)' }}>
+              <div className="flex items-center gap-3">
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Virtual Balance: </span>
+                  <span className="font-black" style={{ color: 'var(--teal)' }}>
+                    ${(10000 + (myEntry?.totalPnl ?? 0)).toFixed(2)}
+                  </span>
+                </div>
+                <div className="h-3 w-px" style={{ background: 'var(--border-soft)' }} />
+                <div className="hidden md:flex items-center gap-1">
+                  <span style={{ color: 'var(--text-muted)' }}>P&L: </span>
+                  <span className="font-black" style={{ color: (myEntry?.totalPnl ?? 0) >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                    {pnlPrefix(myEntry?.totalPnl ?? 0)}{(myEntry?.totalPnl ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              <a href="https://test-app.pacifica.fi/" target="_blank" rel="noopener"
+                className="flex items-center gap-1 font-black"
+                style={{ color: 'var(--gold)', fontSize: '11px' }}
+                title="Get testnet USDC to trade directly on Pacifica">
+                <ExternalLink className="w-3 h-3" /> TESTNET FAUCET
+              </a>
+            </div>
+          )}
+
           {/* Trade form */}
           {!isEnded ? (
             <div className="p-4" style={{ borderBottom: '2px solid #000' }}>
@@ -847,62 +906,140 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           )}
         </div>
 
-        {/* ── Right: Live Feed + Elfa Pulse ─────────────────────────────── */}
-        <div className="w-56 flex flex-col" style={{ borderLeft: '2px solid #000' }}>
-          <div className="flex items-center justify-between px-3 py-2.5"
-            style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
-            <div className="flex items-center gap-1.5">
-              <span className="live-dot-teal" />
-              <span className="text-xs font-black tracking-widest uppercase" style={{ color: 'var(--teal)' }}>Live Feed</span>
-            </div>
-            <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>{feed.length}</span>
+        {/* ── Right: Feed/Chat tabs + Elfa Pulse ─────────────────────────── */}
+        <div className="w-60 flex flex-col" style={{ borderLeft: '2px solid #000' }}>
+          {/* Tab header */}
+          <div className="grid grid-cols-2" style={{ borderBottom: '2px solid #000' }}>
+            <button onClick={() => setRightTab('feed')}
+              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-black tracking-widest uppercase transition-colors"
+              style={{
+                background: rightTab === 'feed' ? 'var(--surface)' : 'var(--surface-2)',
+                color: rightTab === 'feed' ? 'var(--teal)' : 'var(--text-muted)',
+                borderRight: '2px solid #000',
+                borderBottom: rightTab === 'feed' ? '2px solid var(--teal)' : undefined,
+              }}>
+              <span className="live-dot-teal" /> Feed
+              <span style={{ fontSize: '10px', opacity: 0.7 }}>{feed.length}</span>
+            </button>
+            <button onClick={() => setRightTab('chat')}
+              className="flex items-center justify-center gap-1.5 py-2.5 text-xs font-black tracking-widest uppercase transition-colors relative"
+              style={{
+                background: rightTab === 'chat' ? 'var(--surface)' : 'var(--surface-2)',
+                color: rightTab === 'chat' ? 'var(--gold)' : 'var(--text-muted)',
+                borderBottom: rightTab === 'chat' ? '2px solid var(--gold)' : undefined,
+              }}>
+              <MessageCircle className="w-3 h-3" /> Chat
+              <span style={{ fontSize: '10px', opacity: 0.7 }}>{chat.length}</span>
+            </button>
           </div>
 
-          <div className="overflow-y-auto" style={{ flex: '1 1 0', minHeight: 0 }}>
-            {feed.length === 0 ? (
-              <div className="text-center py-10">
-                <BarChart2 className="w-5 h-5 mx-auto mb-2 opacity-20" style={{ color: 'var(--teal)' }} />
-                <div className="text-xs font-black tracking-widest" style={{ color: 'var(--text-dim)' }}>WAITING...</div>
-              </div>
-            ) : (
-              feed.map(event => (
-                <div key={event.id} className="px-3 py-2" style={{ borderBottom: '2px solid #000' }}>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs font-black text-white truncate flex-1">{event.displayName}</span>
-                    <span className="text-xs px-1 py-0.5 font-black" style={{
-                      background: event.action === 'open'
-                        ? (event.side === 'bid' ? 'var(--profit)' : 'var(--loss)')
-                        : 'var(--border-soft)',
-                      color: event.action === 'open' ? (event.side === 'bid' ? '#000' : '#fff') : 'var(--text-muted)',
-                      border: '1px solid #000',
-                      fontSize: '10px',
-                    }}>
-                      {event.action === 'open' ? (event.side === 'bid' ? 'L' : 'S') : 'CL'}
-                    </span>
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {event.amount} {event.symbol} · ${fmtPrice(event.price, event.symbol)} · {event.leverage}x
-                  </div>
-                  {event.pnl !== undefined && (
-                    <div className="text-xs font-black mt-0.5" style={{ color: event.pnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
-                      {pnlPrefix(event.pnl)}{event.pnl.toFixed(2)} USDC
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
-                      {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
-                    {event.pacificaOrderId && (
-                      <span className="text-xs flex items-center gap-0.5" style={{ color: 'var(--teal)' }}
-                        title={`Pacifica: ${event.pacificaOrderId}`}>
-                        <Zap className="w-2.5 h-2.5" /> ⬡
-                      </span>
-                    )}
-                  </div>
+          {/* Feed content */}
+          {rightTab === 'feed' && (
+            <div className="overflow-y-auto" style={{ flex: '1 1 0', minHeight: 0 }}>
+              {feed.length === 0 ? (
+                <div className="text-center py-10">
+                  <BarChart2 className="w-5 h-5 mx-auto mb-2 opacity-20" style={{ color: 'var(--teal)' }} />
+                  <div className="text-xs font-black tracking-widest" style={{ color: 'var(--text-dim)' }}>WAITING...</div>
                 </div>
-              ))
-            )}
-          </div>
+              ) : (
+                feed.map(event => (
+                  <div key={event.id} className="px-3 py-2" style={{ borderBottom: '2px solid #000' }}>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-xs font-black truncate flex-1" style={{ color: 'var(--text)' }}>{event.displayName}</span>
+                      <span className="text-xs px-1 py-0.5 font-black" style={{
+                        background: event.action === 'open'
+                          ? (event.side === 'bid' ? 'var(--profit)' : 'var(--loss)')
+                          : 'var(--border-soft)',
+                        color: event.action === 'open' ? (event.side === 'bid' ? '#000' : '#fff') : 'var(--text-muted)',
+                        border: '1px solid #000',
+                        fontSize: '10px',
+                      }}>
+                        {event.action === 'open' ? (event.side === 'bid' ? 'L' : 'S') : 'CL'}
+                      </span>
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {event.amount} {event.symbol} · ${fmtPrice(event.price, event.symbol)} · {event.leverage}x
+                    </div>
+                    {event.pnl !== undefined && (
+                      <div className="text-xs font-black mt-0.5" style={{ color: event.pnl >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                        {pnlPrefix(event.pnl)}{event.pnl.toFixed(2)} USDC
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                        {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                      {event.pacificaOrderId && (
+                        <span className="text-xs flex items-center gap-0.5" style={{ color: 'var(--teal)' }}
+                          title={`Pacifica: ${event.pacificaOrderId}`}>
+                          <Zap className="w-2.5 h-2.5" /> ⬡
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Chat content */}
+          {rightTab === 'chat' && (
+            <div className="flex flex-col" style={{ flex: '1 1 0', minHeight: 0 }}>
+              <div ref={chatScrollRef} className="overflow-y-auto flex flex-col-reverse"
+                style={{ flex: '1 1 0', minHeight: 0 }}>
+                {chat.length === 0 ? (
+                  <div className="text-center py-10">
+                    <MessageCircle className="w-5 h-5 mx-auto mb-2 opacity-20" style={{ color: 'var(--gold)' }} />
+                    <div className="text-xs font-black tracking-widest mb-1" style={{ color: 'var(--text-dim)' }}>NO MESSAGES</div>
+                    <div className="text-xs" style={{ color: 'var(--text-dim)' }}>Talk smack to your opponents</div>
+                  </div>
+                ) : (
+                  chat.map(m => (
+                    <div key={m.id} className="px-3 py-1.5" style={{ borderBottom: '1px solid var(--border-soft)' }}>
+                      <div className="flex items-baseline gap-1.5 mb-0.5">
+                        <span className="text-xs font-black truncate" style={{
+                          color: m.userId === userId ? 'var(--teal)' : 'var(--gold)',
+                          maxWidth: 100,
+                        }}>{m.displayName}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
+                          {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="text-xs break-words" style={{ color: 'var(--text)', lineHeight: 1.35 }}>
+                        {m.text}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Chat input */}
+              <div className="p-2" style={{ borderTop: '2px solid #000', background: 'var(--surface-2)' }}>
+                {userId ? (
+                  <div className="flex gap-1.5">
+                    <input type="text" maxLength={200}
+                      className="nb-input text-xs"
+                      style={{ flex: 1 }}
+                      placeholder="Say something..."
+                      value={chatInput}
+                      onChange={e => setChatInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleSendChat()}
+                      disabled={chatSending}
+                    />
+                    <button onClick={handleSendChat}
+                      disabled={chatSending || !chatInput.trim()}
+                      className="nb-btn nb-btn-primary px-2.5 py-1.5">
+                      <Send className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-center py-1" style={{ color: 'var(--text-dim)' }}>
+                    Join the arena to chat
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Elfa AI Social Pulse ─────────────────────────────────────── */}
           <div style={{ borderTop: '2px solid #000', flexShrink: 0 }}>
