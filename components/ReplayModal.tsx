@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Play, Pause, SkipBack, SkipForward, Rewind } from 'lucide-react'
 import type { TradeEvent, Competition, LeaderboardEntry } from '@/lib/types'
+import type { Candle } from './CandleChart'
 
 interface Props {
   isOpen: boolean
@@ -59,6 +60,27 @@ export default function ReplayModal({ isOpen, onClose, comp, events, finalLeader
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(2)
   const lastTickRef = useRef<number>(0)
+
+  // Most-traded symbol in this arena — used to fetch candles for context
+  const dominantSymbol = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const ev of sortedEvents) counts[ev.symbol] = (counts[ev.symbol] ?? 0) + 1
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'BTC'
+  }, [sortedEvents])
+
+  // Fetch candles for the dominant symbol when modal opens
+  const [candles, setCandles] = useState<Candle[]>([])
+  useEffect(() => {
+    if (!isOpen) return
+    // Pick interval based on arena length: 1h arena → 1m candles, longer → 5m
+    const durMs = comp.endsAt - comp.startsAt
+    const interval = durMs <= 3_600_000 ? '1m' : durMs <= 14_400_000 ? '5m' : '15m'
+    const limit = Math.min(300, Math.ceil(durMs / (interval === '1m' ? 60_000 : interval === '5m' ? 300_000 : 900_000)) + 5)
+    fetch(`/api/pacifica/kline?symbol=${dominantSymbol}&interval=${interval}&limit=${limit}`)
+      .then(r => r.json())
+      .then(d => setCandles(Array.isArray(d.candles) ? d.candles : []))
+      .catch(() => setCandles([]))
+  }, [isOpen, dominantSymbol, comp.startsAt, comp.endsAt])
 
   // Reset when modal opens
   useEffect(() => {
@@ -169,8 +191,76 @@ export default function ReplayModal({ isOpen, onClose, comp, events, finalLeader
             )}
           </div>
 
-          {/* Right: event stream */}
-          <div className="overflow-y-auto flex flex-col-reverse">
+          {/* Right: price chart + event stream */}
+          <div className="flex flex-col overflow-hidden">
+            {/* Mini price chart showing dominant symbol over arena duration */}
+            {candles.length > 0 && (() => {
+              const W = 300, H = 80, PAD = 6
+              const prices = candles.flatMap(c => [c.h, c.l])
+              const minP = Math.min(...prices)
+              const maxP = Math.max(...prices)
+              const range = maxP - minP || 1
+              const xFor = (t: number) =>
+                PAD + ((t - comp.startsAt) / (comp.endsAt - comp.startsAt)) * (W - PAD * 2)
+              const yFor = (p: number) => PAD + (1 - (p - minP) / range) * (H - PAD * 2)
+              const currentX = xFor(Math.max(comp.startsAt, Math.min(asOf, comp.endsAt)))
+              // Find current price at asOf by picking the nearest candle
+              const nearCandle = candles.reduce((best, c) =>
+                Math.abs(c.t - asOf) < Math.abs(best.t - asOf) ? c : best, candles[0])
+              const currentPriceAtTime = nearCandle.c
+
+              return (
+                <div className="shrink-0" style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
+                  <div className="flex items-center justify-between px-3 py-1.5 text-xs"
+                    style={{ borderBottom: '1px solid var(--border-soft)' }}>
+                    <span className="font-black tracking-widest" style={{ color: 'var(--teal)' }}>
+                      📈 {dominantSymbol} PRICE
+                    </span>
+                    <span className="font-mono font-black" style={{ color: 'var(--text)', fontSize: '11px' }}>
+                      ${currentPriceAtTime.toFixed(currentPriceAtTime >= 100 ? 2 : 4)}
+                    </span>
+                  </div>
+                  <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="none"
+                    style={{ display: 'block' }}>
+                    {/* Candle wicks + bodies — compact */}
+                    {candles.map((c, i) => {
+                      const x = xFor(c.t)
+                      const isUp = c.c >= c.o
+                      const color = isUp ? 'var(--profit)' : 'var(--loss)'
+                      const bodyTop = yFor(Math.max(c.o, c.c))
+                      const bodyBot = yFor(Math.min(c.o, c.c))
+                      return (
+                        <g key={`${c.t}-${i}`}>
+                          <line x1={x} y1={yFor(c.h)} x2={x} y2={yFor(c.l)}
+                            stroke={color} strokeWidth="0.5" opacity="0.7" />
+                          <rect x={x - 1} y={bodyTop} width="2" height={Math.max(0.5, bodyBot - bodyTop)}
+                            fill={color} opacity="0.7" />
+                        </g>
+                      )
+                    })}
+
+                    {/* Trade event markers along bottom */}
+                    {sortedEvents.filter(ev => ev.symbol === dominantSymbol && ev.timestamp <= asOf).map(ev => {
+                      const x = xFor(ev.timestamp)
+                      const color = ev.action === 'open'
+                        ? (ev.side === 'bid' ? 'var(--profit)' : 'var(--loss)')
+                        : 'var(--gold)'
+                      return (
+                        <circle key={ev.id} cx={x} cy={yFor(ev.price)} r="2.5"
+                          fill={color} stroke="#000" strokeWidth="0.5" />
+                      )
+                    })}
+
+                    {/* Playhead — vertical line at current asOf */}
+                    <line x1={currentX} y1={PAD} x2={currentX} y2={H - PAD}
+                      stroke="var(--teal)" strokeWidth="1.5" strokeDasharray="2,2" />
+                    <circle cx={currentX} cy={PAD + 2} r="2" fill="var(--teal)" />
+                  </svg>
+                </div>
+              )
+            })()}
+
+          <div className="overflow-y-auto flex flex-col-reverse" style={{ flex: 1, minHeight: 0 }}>
             {visibleEvents.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-xs" style={{ color: 'var(--text-dim)' }}>
                 Waiting for first trade...
@@ -204,6 +294,7 @@ export default function ReplayModal({ isOpen, onClose, comp, events, finalLeader
                 </div>
               ))
             )}
+          </div>
           </div>
         </div>
 
