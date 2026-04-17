@@ -967,6 +967,47 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               </div>
             )}
 
+            {/* Achievements gallery — show all unlocked badges this arena */}
+            {unlocked.size > 0 && (
+              <div className="p-4 mb-4" style={{
+                background: 'var(--surface)', border: '2px solid #000', boxShadow: '4px 4px 0px #000',
+              }}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-black tracking-widest" style={{ color: 'var(--gold)' }}>
+                    🏅 UNLOCKED {unlocked.size}/{Object.keys(ACHIEVEMENTS).length}
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {Math.round((unlocked.size / Object.keys(ACHIEVEMENTS).length) * 100)}%
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {Object.values(ACHIEVEMENTS).map(ach => {
+                    const gotIt = unlocked.has(ach.id)
+                    return (
+                      <div key={ach.id}
+                        title={`${ach.title} — ${ach.description}${gotIt ? ' · UNLOCKED' : ' · locked'}`}
+                        className="flex flex-col items-center p-1.5"
+                        style={{
+                          background: gotIt ? 'var(--surface-3)' : 'var(--bg)',
+                          border: `1px solid ${gotIt ? 'var(--gold)' : 'var(--border-soft)'}`,
+                          opacity: gotIt ? 1 : 0.3,
+                        }}>
+                        <div className="text-xl mb-0.5" style={{ filter: gotIt ? 'none' : 'grayscale(1)' }}>
+                          {ach.emoji}
+                        </div>
+                        <div className="text-xs font-black text-center" style={{
+                          color: gotIt ? 'var(--gold)' : 'var(--text-dim)',
+                          fontSize: '8px', lineHeight: 1.1,
+                        }}>
+                          {ach.title.toUpperCase()}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="nb-card overflow-hidden mb-4">
               {leaderboard.map((e, i) => {
                 const rank = oceanRank(e.roi)
