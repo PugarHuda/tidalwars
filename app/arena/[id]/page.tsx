@@ -372,6 +372,35 @@ function useElfaTrending() {
   return { tokens, enabled }
 }
 
+/**
+ * KOL heat per symbol — fetches Elfa /v2/data/top-mentions and caches
+ * per symbol. Refreshes every 3 minutes. Returns the aggregate "heat"
+ * score (0-100) that the UI renders as a badge near the symbol.
+ */
+function useElfaHeat(symbol: string) {
+  const [heat, setHeat] = useState<number>(0)
+  const [enabled, setEnabled] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function fetchHeat() {
+      try {
+        const res = await fetch(`/api/elfa/mentions?ticker=${symbol}&timeWindow=1h`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        setEnabled(data.enabled ?? false)
+        setHeat(data.avgHeat ?? 0)
+      } catch { /* silent */ }
+    }
+    fetchHeat()
+    const t = setInterval(fetchHeat, 3 * 60 * 1000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [symbol])
+
+  return { heat, enabled }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ArenaPage({ params }: { params: Promise<{ id: string }> }) {
@@ -386,6 +415,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [timeLeft, setTimeLeft] = useState(0)
 
   const [symbol, setSymbol] = useState('BTC')
+  const { heat: elfaHeat, enabled: elfaHeatEnabled } = useElfaHeat(symbol)
   const [side, setSide] = useState<'bid' | 'ask'>('bid')
   const [amount, setAmount] = useState('0.01')
   const [leverage, setLeverage] = useState(5)
@@ -1107,6 +1137,28 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
         {/* ── Center: Trade Panel ────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
+
+          {/* Elfa KOL heat banner for the selected symbol */}
+          {elfaHeatEnabled && elfaHeat > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1 text-xs"
+              style={{ borderBottom: '1px solid var(--border-soft)', background: 'var(--surface-2)' }}
+              title={`Top-mentions heat from Elfa AI /v2/data/top-mentions for ${symbol} · last 1h`}>
+              <span style={{ fontSize: '11px' }}>🔥</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>KOL HEAT · {symbol}</span>
+              {/* Horizontal bar representation */}
+              <div className="flex-1 h-1.5 max-w-[120px]" style={{ background: 'var(--bg)', border: '1px solid var(--border-soft)' }}>
+                <div className="h-full transition-all"
+                  style={{
+                    width: `${Math.min(100, elfaHeat)}%`,
+                    background: elfaHeat >= 70 ? 'var(--loss)' : elfaHeat >= 40 ? 'var(--gold)' : 'var(--profit)',
+                  }} />
+              </div>
+              <span className="font-black" style={{ color: 'var(--text)', fontSize: '10px' }}>{elfaHeat}/100</span>
+              <span style={{ color: 'var(--text-dim)', fontSize: '9px', marginLeft: 'auto' }}>
+                powered by Elfa AI · 1h window
+              </span>
+            </div>
+          )}
 
           {/* Symbol selector + price bar */}
           <div className="flex gap-0 px-0 py-0 overflow-x-auto" style={{ borderBottom: '2px solid #000' }}>

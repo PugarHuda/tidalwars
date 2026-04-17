@@ -127,3 +127,63 @@ export async function getSmartMentions(
 export function isElfaEnabled(): boolean {
   return Boolean(process.env.ELFA_API_KEY)
 }
+
+/**
+ * KOL heat: top mentions for a single ticker in the selected window.
+ * Returns engagement metrics per post (no raw text in v2 free tier).
+ *
+ * Endpoint: GET /v2/data/top-mentions?ticker=BTC&timeWindow=1h&limit=5
+ */
+export interface TopMention {
+  id: string
+  timestamp: number
+  viewCount: number
+  likeCount: number
+  replyCount?: number
+  smartEngagement?: number
+  heat: number   // derived: normalized engagement score 0-100
+}
+
+export async function getTopMentions(
+  ticker: string,
+  timeWindow: '1h' | '4h' | '24h' | '7d' = '1h',
+  limit = 5,
+): Promise<TopMention[]> {
+  if (!process.env.ELFA_API_KEY) return []
+  try {
+    const params = new URLSearchParams({
+      ticker,
+      timeWindow,
+      limit: String(limit),
+      minEngagement: '10',
+    })
+    const res = await fetch(`${ELFA_BASE}/data/top-mentions?${params}`, {
+      headers: headers(),
+      next: { revalidate: 180 }, // 3-min server cache
+    })
+    if (!res.ok) return []
+    const json = await res.json()
+    const raw: Record<string, unknown>[] = Array.isArray(json?.data?.data)
+      ? json.data.data
+      : Array.isArray(json?.data)
+        ? json.data
+        : []
+
+    // Compute max for normalization (simple heat score for UI badge)
+    const engagements = raw.map(r => Number(r.view_count ?? 0) + Number(r.like_count ?? 0) * 3)
+    const maxE = Math.max(...engagements, 1)
+
+    return raw.map((r, i): TopMention => {
+      const engagement = engagements[i]
+      return {
+        id: String(r.source_ref_id ?? r.id ?? `${ticker}-${i}`),
+        timestamp: Number(r.timestamp ?? r.created_at ?? 0),
+        viewCount: Number(r.view_count ?? 0),
+        likeCount: Number(r.like_count ?? 0),
+        replyCount: r.reply_count != null ? Number(r.reply_count) : undefined,
+        smartEngagement: r.smart_engagement != null ? Number(r.smart_engagement) : undefined,
+        heat: Math.round((engagement / maxE) * 100),
+      }
+    }).slice(0, limit)
+  } catch { return [] }
+}
