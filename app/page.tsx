@@ -186,34 +186,32 @@ export default function Home() {
               background: 'radial-gradient(ellipse 70% 50% at 50% 0%, rgba(0,216,245,0.12) 0%, transparent 70%)',
             }} />
             <div className="text-center relative">
-              <div className="inline-flex items-center gap-2 px-3 py-1 mb-4 text-xs font-black tracking-[0.2em]"
+              <div className="inline-flex items-center gap-2 px-3 py-1 mb-5 text-xs font-black tracking-[0.2em]"
                 style={{ background: 'var(--teal-bg)', border: '1px solid var(--teal)', color: 'var(--teal)' }}>
-                <Waves className="w-3 h-3" /> PVP PERPETUALS ON PACIFICA DEX
+                <Waves className="w-3 h-3" /> PVP PERPETUALS · BUILT ON PACIFICA
               </div>
-              <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-4 leading-none" style={{ textShadow: '4px 4px 0px #000' }}>
+              <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-5 leading-none" style={{ textShadow: '4px 4px 0px #000' }}>
                 <span style={{ color: 'var(--teal)' }}>TIDAL</span>
-                <span style={{ color: 'var(--text)' }}> WARS</span>
-                <span className="inline-block float-slow ml-2">🌊</span>
+                <span style={{ color: 'var(--text)' }}>WARS</span>
               </h1>
-              <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                Join live trading competitions on Pacifica testnet. Open long/short positions
-                with real on-chain orders. Best PnL when the tide settles wins.
+              <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)', lineHeight: '1.7' }}>
+                Real-time trading tournaments. Open positions with live Pacifica prices,
+                battle other traders in timed arenas, climb the points ladder.
               </p>
               {globalStats && (
                 <div className="flex items-stretch justify-center mx-auto max-w-sm border-2 border-black overflow-hidden" style={{ boxShadow: 'var(--nb-shadow)' }}>
                   {[
-                    { label: 'Arenas', val: globalStats.totalCompetitions, icon: '⚔️' },
-                    { label: 'Traders', val: globalStats.totalTraders, icon: '👤' },
-                    { label: 'Trades', val: globalStats.globalTrades, icon: '⚡' },
-                  ].map(({ label, val, icon }, i) => (
+                    { label: 'Arenas', val: globalStats.totalCompetitions },
+                    { label: 'Traders', val: globalStats.totalTraders },
+                    { label: 'Trades', val: globalStats.globalTrades },
+                  ].map(({ label, val }, i) => (
                     <div key={label} className="flex-1 py-3 px-2"
                       style={{
                         background: i === 1 ? 'var(--surface-3)' : 'var(--surface-2)',
                         borderRight: i < 2 ? '2px solid #000' : 'none',
                       }}>
-                      <div className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>{icon}</div>
-                      <div className="text-xl font-black" style={{ color: 'var(--teal)' }}>{val.toLocaleString()}</div>
-                      <div className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                      <div className="text-2xl font-black tabular-nums" style={{ color: 'var(--teal)' }}>{val.toLocaleString()}</div>
+                      <div className="text-xs font-bold uppercase tracking-wider mt-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
                     </div>
                   ))}
                 </div>
@@ -224,9 +222,16 @@ export default function Home() {
 
         {/* ── Create Competition ───────────────────────────────────────────── */}
         <div className="mb-10 nb-card p-5" style={{ borderColor: 'var(--border-soft)', borderTopColor: 'var(--teal)', borderTopWidth: 3 }}>
-          <div className="flex items-center gap-2 mb-4 pb-3" style={{ borderBottom: '1px solid var(--border-soft)' }}>
-            <Zap className="w-4 h-4" style={{ color: 'var(--teal)' }} />
-            <span className="text-sm font-black tracking-[0.15em]" style={{ color: 'var(--teal)' }}>LAUNCH COMPETITION</span>
+          <div className="flex items-center justify-between gap-2 mb-4 pb-3" style={{ borderBottom: '1px solid var(--border-soft)' }}>
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4" style={{ color: 'var(--teal)' }} />
+              <span className="text-sm font-black tracking-[0.15em]" style={{ color: 'var(--teal)' }}>
+                CREATE ARENA
+              </span>
+            </div>
+            <span className="text-xs" style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+              $10k virtual · max 10× leverage
+            </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div>
@@ -332,18 +337,18 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               {
-                num: '01', title: 'JOIN ARENA',
-                body: 'Pick an active competition or create your own. Set duration from 1 min to 4 hours.',
+                num: '01', title: 'JOIN AN ARENA',
+                body: 'Create a room or jump into a live one. Durations from 1 minute to 4 hours — your call.',
                 color: 'var(--teal)',
               },
               {
-                num: '02', title: 'TRADE LIVE',
-                body: 'Long or short BTC, ETH, SOL, WIF, BONK perpetuals. Up to 10× leverage. Real Pacifica prices via WebSocket.',
+                num: '02', title: 'TRADE ON PACIFICA',
+                body: 'Long or short five perpetuals with live on-chain prices. Up to 10× leverage.',
                 color: 'var(--profit)',
               },
               {
-                num: '03', title: 'WIN THE TIDE',
-                body: 'Highest P&L when the timer hits zero takes the crown. Live leaderboard updates every tick.',
+                num: '03', title: 'CLIMB THE LADDER',
+                body: 'Top PnL wins the arena. Earn Tidal Points that carry across every match you play.',
                 color: 'var(--gold)',
               },
             ].map(step => (
