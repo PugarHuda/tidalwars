@@ -10,7 +10,10 @@ import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types
 import WalletButton from '@/components/WalletButton'
 import SigningModal from '@/components/SigningModal'
 import ReplayModal from '@/components/ReplayModal'
+import AgentKeyPanel from '@/components/AgentKeyPanel'
 import { CandleChart } from '@/components/CandleChart'
+import { useAgentKey } from '@/lib/useAgentKey'
+import { usePrivySolanaSign } from '@/lib/usePrivySolanaSign'
 import { usePacificaWs } from '@/lib/pacificaWs'
 import type { TrendingToken } from '@/lib/elfa'
 import type { ChatMessage } from '@/lib/chat'
@@ -396,6 +399,8 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [tradeMode, setTradeMode] = useState<'virtual' | 'testnet'>('virtual')
   const [chartView, setChartView] = useState<'chart' | 'tide'>('chart')
   const [replayOpen, setReplayOpen] = useState(false)
+  const agentKey = useAgentKey()
+  const privy = usePrivySolanaSign()
   const [tradeFlash, setTradeFlash] = useState<'long' | 'short' | 'close' | null>(null)
   const [pendingSign, setPendingSign] = useState<{
     action: 'open' | 'close'
@@ -488,8 +493,44 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     const tradeAmount = closePos?.amount ?? parseFloat(amount)
     const tradeLeverage = closePos?.leverage ?? leverage
 
-    // TESTNET mode with open/close — show signing modal first
+    // TESTNET mode flow
     if (tradeMode === 'testnet') {
+      // Fast path: agent key bound → sign with agent + relay (NO modal, NO prompt)
+      if (agentKey.bound) {
+        const orderId = clientOrderId ?? crypto.randomUUID()
+        const sidePayload = action === 'close' ? (tradeSide === 'bid' ? 'ask' : 'bid') : tradeSide
+        try {
+          const signed = agentKey.signOrder({
+            type: 'create_market_order',
+            payload: {
+              amount: String(tradeAmount),
+              builder_code: BUILDER_CODE,
+              client_order_id: orderId,
+              reduce_only: action === 'close',
+              side: sidePayload,
+              slippage_percent: '1',
+              symbol: tradeSymbol,
+            },
+          })
+          const res = await fetch('/api/pacifica/relay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: 'orders/create_market', body: signed.assembledBody }),
+          })
+          const data = await res.json()
+          setTradeFlash(tradeSide === 'bid' ? 'long' : 'short')
+          setTradeMsg(data.ok
+            ? `⚡ AGENT SIGNED · Pacifica confirmed`
+            : `⚡ AGENT SIGNED · Pacifica rejected (check liquidity)`)
+        } catch (e) {
+          setTradeMsg(`⚠ Agent sign failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
+        // Still record in competition state for virtual PnL
+        await submitTrade(action, orderId, tradeSymbol, tradeSide, tradeAmount, tradeLeverage, currentPrice)
+        return
+      }
+
+      // Slow path: no agent yet → show signing modal (user must approve each trade)
       setPendingSign({
         action,
         clientOrderId: clientOrderId ?? crypto.randomUUID(),
@@ -1005,6 +1046,12 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             title="Trade events tracked via Fuul Events API">
             FUUL
           </span>
+          {/* Agent key — shown only when Privy wallet connected */}
+          {privy.ready && (
+            <div className="hidden md:flex">
+              <AgentKeyPanel agentKey={agentKey} />
+            </div>
+          )}
           <WalletButton />
         </div>
       </header>
