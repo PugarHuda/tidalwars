@@ -13,6 +13,7 @@ import ReplayModal from '@/components/ReplayModal'
 import KeyboardHelp from '@/components/KeyboardHelp'
 import Confetti from '@/components/Confetti'
 import { CandleChart } from '@/components/CandleChart'
+import { OceanBattle } from '@/components/OceanBattle'
 import { useKeyboard } from '@/lib/useKeyboard'
 
 // Privy-dependent components carry @privy-io/react-auth/solana + @solana/kit
@@ -438,7 +439,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [chatSending, setChatSending] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const [tradeMode, setTradeMode] = useState<'virtual' | 'testnet'>('virtual')
-  const [chartView, setChartView] = useState<'chart' | 'tide'>('chart')
+  const [chartView, setChartView] = useState<'chart' | 'battle' | 'tide'>('battle')
   const [replayOpen, setReplayOpen] = useState(false)
   const agentKey = useAgentKey()
   const privy = usePrivySolanaSign()
@@ -1308,10 +1309,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             })}
           </div>
 
-          {/* Chart view toggle (Candles from Pacifica /kline vs Tide Gauge ocean vibe) */}
-          <div className="flex" style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
+          {/* Chart view: 3-way toggle — Battle (ships), Candles (OHLC), Tide (wave gauge) */}
+          <div className="grid grid-cols-3" style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
+            <button onClick={() => setChartView('battle')}
+              className="py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+              style={{
+                background: chartView === 'battle' ? 'var(--surface-2)' : 'var(--surface)',
+                color: chartView === 'battle' ? 'var(--profit)' : 'var(--text-muted)',
+                borderRight: '2px solid #000',
+                borderBottom: chartView === 'battle' ? '2px solid var(--profit)' : '2px solid transparent',
+              }}>
+              🚢 BATTLE
+            </button>
             <button onClick={() => setChartView('chart')}
-              className="flex-1 py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+              className="py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
               style={{
                 background: chartView === 'chart' ? 'var(--surface-2)' : 'var(--surface)',
                 color: chartView === 'chart' ? 'var(--teal)' : 'var(--text-muted)',
@@ -1319,20 +1330,27 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                 borderBottom: chartView === 'chart' ? '2px solid var(--teal)' : '2px solid transparent',
               }}>
               📊 CANDLES
-              <span style={{ fontSize: '9px', opacity: 0.6 }}>/kline</span>
             </button>
             <button onClick={() => setChartView('tide')}
-              className="flex-1 py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+              className="py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
               style={{
                 background: chartView === 'tide' ? 'var(--surface-2)' : 'var(--surface)',
                 color: chartView === 'tide' ? 'var(--gold)' : 'var(--text-muted)',
                 borderBottom: chartView === 'tide' ? '2px solid var(--gold)' : '2px solid transparent',
               }}>
-              🌊 TIDE GAUGE
+              🌊 TIDE
             </button>
           </div>
 
-          {chartView === 'chart' ? (
+          {chartView === 'battle' ? (
+            <OceanBattle
+              comp={comp}
+              symbol={symbol}
+              currentPrice={prices[symbol] ?? 0}
+              prices={prices}
+              myUserId={userId}
+            />
+          ) : chartView === 'chart' ? (
             <CandleChart
               symbol={symbol}
               currentPrice={prices[symbol] ?? 0}
