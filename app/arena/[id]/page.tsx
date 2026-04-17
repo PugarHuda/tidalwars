@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic'
 import ReplayModal from '@/components/ReplayModal'
 import KeyboardHelp from '@/components/KeyboardHelp'
 import Confetti from '@/components/Confetti'
+import ShipShop from '@/components/ShipShop'
 import { CandleChart } from '@/components/CandleChart'
 import { OceanBattle } from '@/components/OceanBattle'
 import { useKeyboard } from '@/lib/useKeyboard'
@@ -30,7 +31,7 @@ import type { TrendingToken } from '@/lib/elfa'
 import type { ChatMessage } from '@/lib/chat'
 import { ACHIEVEMENTS, loadUnlocked, saveUnlocked, type Achievement } from '@/lib/achievements'
 import { captainFor } from '@/lib/points'
-import { isSoundEnabled, setSoundEnabled, playBubble, playChime, playThud, playSplash, playWhale } from '@/lib/sounds'
+import { isSoundEnabled, setSoundEnabled, playBubble, playChime, playThud, playSplash, playWhale, startAmbient, updateAmbient, stopAmbient } from '@/lib/sounds'
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
@@ -445,6 +446,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const privy = usePrivySolanaSign()
   const [soundOn, setSoundOn] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [shopOpen, setShopOpen] = useState(false)
 
   useEffect(() => { setSoundOn(isSoundEnabled()) }, [])
   function toggleSound() {
@@ -829,6 +831,27 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const isEnded = comp?.status === 'ended'
   const isWaiting = comp?.status === 'waiting'
 
+  // Ambient ocean backing track — intensity scales with session volatility
+  const initialArenaPriceRef = useRef(0)
+  useEffect(() => {
+    const p = prices[symbol] ?? 0
+    if (initialArenaPriceRef.current === 0 && p > 0) initialArenaPriceRef.current = p
+  }, [prices, symbol])
+
+  useEffect(() => {
+    if (!soundOn || isEnded) { stopAmbient(); return }
+    const initial = initialArenaPriceRef.current
+    const cur = prices[symbol] ?? 0
+    const changePct = initial > 0 ? Math.abs((cur - initial) / initial * 100) : 0
+    // Map 0-6% to 0-1 intensity
+    const intensity = Math.min(1, changePct / 6)
+    startAmbient(intensity)
+    updateAmbient(intensity)
+  }, [soundOn, isEnded, prices, symbol])
+
+  // Stop ambient on unmount
+  useEffect(() => () => stopAmbient(), [])
+
   // Trigger whale sound + confetti setup once user has won (fires when winner screen first appears)
   const playedWinSoundRef = useRef(false)
   useEffect(() => {
@@ -1154,6 +1177,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       {/* Keyboard shortcuts help (? to toggle, Esc to close) */}
       <KeyboardHelp isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
 
+      {/* Ship Shop — pick ship emoji based on Tidal Points tier */}
+      <ShipShop isOpen={shopOpen} onClose={() => setShopOpen(false)} userId={userId} />
+
       {/* TESTNET signing modal — Privy wallet if connected, else server demo keypair */}
       <SigningModal
         isOpen={pendingSign !== null}
@@ -1267,6 +1293,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             {soundOn
               ? <Volume2 className="w-3.5 h-3.5" style={{ color: 'var(--teal)' }} />
               : <VolumeX className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          <button onClick={() => setShopOpen(true)}
+            className="nb-btn nb-btn-ghost py-1 px-2"
+            title="Ship Shop — customize your battle ship">
+            <span style={{ fontSize: '13px' }}>🛥️</span>
           </button>
           <button onClick={() => setHelpOpen(true)}
             className="nb-btn nb-btn-ghost py-1 px-2 hidden md:flex"
@@ -1440,6 +1471,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               currentPrice={prices[symbol] ?? 0}
               prices={prices}
               myUserId={userId}
+              chat={chat}
             />
           ) : chartView === 'chart' ? (
             <CandleChart

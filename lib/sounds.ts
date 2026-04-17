@@ -121,6 +121,84 @@ export function playSplash() {
   src.start()
 }
 
+// ── Ambient ocean backing track ─────────────────────────────────────────────
+// Continuous low-gain drone that responds to wave intensity. 0 = calm flat
+// sea, 1 = tsunami. Intensity ramps smoothly via linearRampToValueAtTime.
+
+interface AmbientNodes {
+  rumble: OscillatorNode       // deep ocean rumble
+  wind: BiquadFilterNode        // bandpass-filtered noise = "wind/waves"
+  noise: AudioBufferSourceNode
+  rumbleGain: GainNode
+  windGain: GainNode
+}
+let ambient: AmbientNodes | null = null
+
+export function startAmbient(intensity = 0): void {
+  const c = guard()
+  if (!c) return
+  if (ambient) { updateAmbient(intensity); return }
+
+  // Ocean rumble — very low sine
+  const rumble = c.createOscillator()
+  rumble.type = 'sine'
+  rumble.frequency.value = 55
+  const rumbleGain = c.createGain()
+  rumbleGain.gain.value = 0.015 + intensity * 0.04
+
+  // White-noise buffer for waves/wind
+  const bufSize = c.sampleRate * 2
+  const buffer = c.createBuffer(1, bufSize, c.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1
+  const noise = c.createBufferSource()
+  noise.buffer = buffer
+  noise.loop = true
+
+  // Band-pass filter shapes noise into wave sounds
+  const wind = c.createBiquadFilter()
+  wind.type = 'bandpass'
+  wind.frequency.value = 300 + intensity * 400  // higher intensity = higher wind pitch
+  wind.Q.value = 0.6
+
+  const windGain = c.createGain()
+  windGain.gain.value = 0.008 + intensity * 0.05
+
+  rumble.connect(rumbleGain)
+  rumbleGain.connect(c.destination)
+  noise.connect(wind)
+  wind.connect(windGain)
+  windGain.connect(c.destination)
+
+  rumble.start()
+  noise.start()
+
+  ambient = { rumble, wind, noise, rumbleGain, windGain }
+}
+
+export function updateAmbient(intensity: number): void {
+  if (!ambient) return
+  const c = audioCtx
+  if (!c) return
+  const now = c.currentTime
+  const ramp = 0.8  // smooth 800ms transition
+  ambient.rumbleGain.gain.cancelScheduledValues(now)
+  ambient.rumbleGain.gain.linearRampToValueAtTime(0.015 + intensity * 0.04, now + ramp)
+  ambient.windGain.gain.cancelScheduledValues(now)
+  ambient.windGain.gain.linearRampToValueAtTime(0.008 + intensity * 0.05, now + ramp)
+  ambient.wind.frequency.cancelScheduledValues(now)
+  ambient.wind.frequency.linearRampToValueAtTime(300 + intensity * 400, now + ramp)
+}
+
+export function stopAmbient(): void {
+  if (!ambient) return
+  try {
+    ambient.rumble.stop()
+    ambient.noise.stop()
+  } catch { /* already stopped */ }
+  ambient = null
+}
+
 /** Distant whale call — used for big wins / competition end */
 export function playWhale() {
   const c = guard()
