@@ -163,25 +163,31 @@ export async function getTopMentions(
     })
     if (!res.ok) return []
     const json = await res.json()
-    const raw: Record<string, unknown>[] = Array.isArray(json?.data?.data)
-      ? json.data.data
-      : Array.isArray(json?.data)
-        ? json.data
+    // v2 top-mentions actual shape: { success: true, data: [{tweetId, likeCount, viewCount, ...}] }
+    const raw: Record<string, unknown>[] = Array.isArray(json?.data)
+      ? json.data
+      : Array.isArray(json?.data?.data)
+        ? json.data.data
         : []
 
-    // Compute max for normalization (simple heat score for UI badge)
-    const engagements = raw.map(r => Number(r.view_count ?? 0) + Number(r.like_count ?? 0) * 3)
+    // Aggregate view+3×like+5×repost. Repost is strongest signal (KOL amplification).
+    const engagements = raw.map(r =>
+      Number(r.viewCount ?? r.view_count ?? 0)
+      + Number(r.likeCount ?? r.like_count ?? 0) * 3
+      + Number(r.repostCount ?? 0) * 5
+    )
     const maxE = Math.max(...engagements, 1)
 
     return raw.map((r, i): TopMention => {
       const engagement = engagements[i]
+      const repostBreakdown = r.repostBreakdown as { smart?: number } | undefined
       return {
-        id: String(r.source_ref_id ?? r.id ?? `${ticker}-${i}`),
-        timestamp: Number(r.timestamp ?? r.created_at ?? 0),
-        viewCount: Number(r.view_count ?? 0),
-        likeCount: Number(r.like_count ?? 0),
-        replyCount: r.reply_count != null ? Number(r.reply_count) : undefined,
-        smartEngagement: r.smart_engagement != null ? Number(r.smart_engagement) : undefined,
+        id: String(r.tweetId ?? r.source_ref_id ?? r.id ?? `${ticker}-${i}`),
+        timestamp: r.mentionedAt ? new Date(String(r.mentionedAt)).getTime() : Number(r.timestamp ?? 0),
+        viewCount: Number(r.viewCount ?? r.view_count ?? 0),
+        likeCount: Number(r.likeCount ?? r.like_count ?? 0),
+        replyCount: r.replyCount != null ? Number(r.replyCount) : undefined,
+        smartEngagement: repostBreakdown?.smart != null ? Number(repostBreakdown.smart) : undefined,
         heat: Math.round((engagement / maxE) * 100),
       }
     }).slice(0, limit)
