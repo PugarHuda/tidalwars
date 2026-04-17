@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import {
   Trophy, TrendingUp, TrendingDown, Clock, ArrowLeft, Zap,
   Activity, Wifi, WifiOff, BarChart2, Globe, Waves, Sparkles,
-  MessageCircle, Send, ExternalLink, Copy,
+  MessageCircle, Send, ExternalLink, Copy, Volume2, VolumeX,
 } from 'lucide-react'
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
@@ -19,6 +19,7 @@ import type { TrendingToken } from '@/lib/elfa'
 import type { ChatMessage } from '@/lib/chat'
 import { ACHIEVEMENTS, loadUnlocked, saveUnlocked, type Achievement } from '@/lib/achievements'
 import { captainFor } from '@/lib/points'
+import { isSoundEnabled, setSoundEnabled, playBubble, playChime, playThud, playSplash, playWhale } from '@/lib/sounds'
 
 const SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
@@ -431,6 +432,15 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [replayOpen, setReplayOpen] = useState(false)
   const agentKey = useAgentKey()
   const privy = usePrivySolanaSign()
+  const [soundOn, setSoundOn] = useState(false)
+
+  useEffect(() => { setSoundOn(isSoundEnabled()) }, [])
+  function toggleSound() {
+    const next = !soundOn
+    setSoundEnabled(next)
+    setSoundOn(next)
+    if (next) playBubble('long') // preview sound on enable
+  }
   const [tradeFlash, setTradeFlash] = useState<'long' | 'short' | 'close' | null>(null)
   const [pendingSign, setPendingSign] = useState<{
     action: 'open' | 'close'
@@ -457,7 +467,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       const next = new Set(prev).add(achId)
       saveUnlocked(id, next)
       const ach = ACHIEVEMENTS[achId]
-      if (ach) setAchievementToast(ach)
+      if (ach) { setAchievementToast(ach); playSplash() }
       return next
     })
   }, [id])
@@ -600,6 +610,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           const onChain = data.pacifica?.success
           setLastPacificaId(data.pacifica?.orderId ?? null)
           setTradeFlash(tSide === 'bid' ? 'long' : 'short')
+          playBubble(tSide === 'bid' ? 'long' : 'short')
 
           // Achievements on open
           unlock('first_blood')
@@ -617,6 +628,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           const pnl = data.pnl ?? 0
           setTradeFlash('close')
           setTradeMsg(`${pnl >= 0 ? '🏆 WINNING CLOSE' : '📉 CLOSED AT LOSS'} · PnL ${pnlPrefix(pnl)}$${Math.abs(pnl).toFixed(2)}`)
+          if (pnl >= 100) playWhale()
+          else if (pnl > 0) playChime()
+          else playThud()
 
           // Achievements on close
           if (pnl > 0) unlock('winning_close')
@@ -1082,6 +1096,14 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               <AgentKeyPanel agentKey={agentKey} />
             </div>
           )}
+          {/* Sound toggle — ocean-themed SFX on trades & achievements */}
+          <button onClick={toggleSound}
+            className="nb-btn nb-btn-ghost py-1 px-2"
+            title={soundOn ? 'Mute sound effects' : 'Enable sound effects (bubble pops, chimes, whale calls)'}>
+            {soundOn
+              ? <Volume2 className="w-3.5 h-3.5" style={{ color: 'var(--teal)' }} />
+              : <VolumeX className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />}
+          </button>
           <WalletButton />
         </div>
       </header>
