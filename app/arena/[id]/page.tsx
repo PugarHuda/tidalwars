@@ -11,6 +11,7 @@ import WalletButton from '@/components/WalletButton'
 import dynamic from 'next/dynamic'
 import ReplayModal from '@/components/ReplayModal'
 import KeyboardHelp from '@/components/KeyboardHelp'
+import Confetti from '@/components/Confetti'
 import { CandleChart } from '@/components/CandleChart'
 import { useKeyboard } from '@/lib/useKeyboard'
 
@@ -776,6 +777,17 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const myEntry = liveLeaderboard.find(e => e.userId === userId)
   const myPositions: Position[] = comp?.participants?.[userId]?.positions ?? []
   const isEnded = comp?.status === 'ended'
+
+  // Trigger whale sound + confetti setup once user has won (fires when winner screen first appears)
+  const playedWinSoundRef = useRef(false)
+  useEffect(() => {
+    if (!isEnded || !userId) return
+    const winner = leaderboard[0]
+    if (!winner || winner.userId !== userId) return
+    if (playedWinSoundRef.current) return
+    playedWinSoundRef.current = true
+    playWhale()
+  }, [isEnded, leaderboard, userId])
   // Spectator: we have a userId but we're not a participant in this arena
   const isSpectator = !!comp && (!userId || !comp.participants[userId])
   const minutes = Math.floor(timeLeft / 60000)
@@ -837,8 +849,10 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   }
 
   if (isEnded && displayWinner) {
+    const userIsWinner = displayWinner.userId === userId
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8" style={{ background: 'var(--bg)' }}>
+        <Confetti trigger={userIsWinner} count={80} />
         <ReplayModal
           isOpen={replayOpen}
           onClose={() => setReplayOpen(false)}
@@ -930,9 +944,27 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </div>
           </div>
 
-          <div className="flex gap-3 mb-3">
-            <button onClick={() => setReplayOpen(true)} className="nb-btn nb-btn-ocean flex-1 py-3">
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <button onClick={() => setReplayOpen(true)} className="nb-btn nb-btn-ocean py-3">
               ⏪ REPLAY ARENA
+            </button>
+            <button
+              onClick={() => {
+                const myResult = liveLeaderboard.find(e => e.userId === userId)
+                const rank = myResult?.rank ?? displayWinner.rank
+                const pnl = myResult?.totalPnl ?? displayWinner.totalPnl
+                const roi = myResult?.roi ?? displayWinner.roi
+                const rankObj = oceanRank(roi)
+                const text = myResult
+                  ? `I finished #${rank} with ${rankObj.emoji} ${rankObj.title} rank on @tidalwars — ${pnlPrefix(pnl)}$${pnl.toFixed(2)} USDC (${roi.toFixed(2)}% ROI) in "${comp.name}" 🌊`
+                  : `"${comp.name}" just wrapped on @tidalwars — ${displayWinner.displayName} wins ${oceanRank(displayWinner.roi).emoji} with ${pnlPrefix(displayWinner.totalPnl)}$${displayWinner.totalPnl.toFixed(2)} (${displayWinner.roi.toFixed(2)}% ROI) 🌊`
+                const url = `https://perpwars.vercel.app/arena/${id}`
+                const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+                window.open(tweetUrl, '_blank', 'noopener,noreferrer')
+              }}
+              className="nb-btn nb-btn-gold py-3"
+              style={{ background: 'var(--gold)', color: '#000' }}>
+              🐦 SHARE RESULT
             </button>
           </div>
           <div className="flex gap-3">
