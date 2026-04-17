@@ -15,6 +15,7 @@ import Confetti from '@/components/Confetti'
 import ShipShop from '@/components/ShipShop'
 import LiquidationBroadcast from '@/components/LiquidationBroadcast'
 import ArenaSettings from '@/components/ArenaSettings'
+import TipModal from '@/components/TipModal'
 import { CandleChart } from '@/components/CandleChart'
 import { OceanBattle } from '@/components/OceanBattle'
 import { useKeyboard } from '@/lib/useKeyboard'
@@ -283,12 +284,20 @@ const TideGauge = memo(function TideGauge({
 
 // ── SSE hook ──────────────────────────────────────────────────────────────────
 
-interface SsePayload { type: 'competition' | 'feed' | 'chat' | 'prices' | 'error'; data: unknown }
+interface SsePayload { type: 'competition' | 'feed' | 'chat' | 'prices' | 'tips' | 'error'; data: unknown }
+interface TipEvent {
+  id: string; competitionId: string
+  fromUserId: string; fromDisplayName: string
+  toUserId: string;   toDisplayName: string
+  amount: number; timestamp: number
+}
+interface TipState { totals: Record<string, number>; events: TipEvent[] }
 
 function useCompetitionStream(id: string) {
   const [comp, setComp] = useState<Competition | null>(null)
   const [feed, setFeed] = useState<TradeEvent[]>([])
   const [chat, setChat] = useState<ChatMessage[]>([])
+  const [tips, setTips] = useState<TipState>({ totals: {}, events: [] })
   const [restPrices, setRestPrices] = useState<Record<string, number>>({})
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [loadError, setLoadError] = useState(false)
@@ -331,6 +340,7 @@ function useCompetitionStream(id: string) {
           if (msg.type === 'competition') setComp(msg.data as Competition)
           if (msg.type === 'feed') setFeed(msg.data as TradeEvent[])
           if (msg.type === 'chat') setChat(msg.data as ChatMessage[])
+          if (msg.type === 'tips') setTips(msg.data as TipState)
           if (msg.type === 'error') pollRest() // competition not found on this instance
           if (msg.type === 'prices') {
             const prices = msg.data as Record<string, number>
@@ -358,7 +368,7 @@ function useCompetitionStream(id: string) {
     return () => clearTimeout(t)
   }, [comp])
 
-  return { comp, feed, chat, restPrices, leaderboard, sseConnected: connected, loadError }
+  return { comp, feed, chat, tips, restPrices, leaderboard, sseConnected: connected, loadError }
 }
 
 // ── Elfa AI Trending hook ─────────────────────────────────────────────────────
@@ -422,7 +432,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const { id } = use(params)
   const router = useRouter()
 
-  const { comp, feed, chat, restPrices, leaderboard, sseConnected, loadError } = useCompetitionStream(id)
+  const { comp, feed, chat, tips, restPrices, leaderboard, sseConnected, loadError } = useCompetitionStream(id)
   const { tickers, wsConnected } = usePacificaWs()
   const { tokens: elfaTokens, enabled: elfaEnabled } = useElfaTrending()
 
@@ -455,6 +465,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   // Track previous ranks to animate rank deltas
   const prevRanksRef = useRef<Record<string, number>>({})
   const [rankDeltas, setRankDeltas] = useState<Record<string, { delta: number; ts: number }>>({})
+
+  // Tip modal target
+  const [tipTarget, setTipTarget] = useState<{ toUserId: string; toDisplayName: string } | null>(null)
 
   useEffect(() => { setSoundOn(isSoundEnabled()) }, [])
   function toggleSound() {
@@ -1244,6 +1257,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       {/* Liquidation broadcast — fires when any participant closes at >=50% loss */}
       <LiquidationBroadcast liq={liqBroadcast} />
 
+      {/* Tip modal — spectator or participant gifts Tidal Points to another trader */}
+      {tipTarget && userId && (
+        <TipModal
+          isOpen={tipTarget !== null}
+          onClose={() => setTipTarget(null)}
+          competitionId={id}
+          fromUserId={userId}
+          fromDisplayName={displayName}
+          toUserId={tipTarget.toUserId}
+          toDisplayName={tipTarget.toDisplayName}
+          onSent={() => playSplash()}
+        />
+      )}
+
       {/* TESTNET signing modal — Privy wallet if connected, else server demo keypair */}
       <SigningModal
         isOpen={pendingSign !== null}
@@ -1531,6 +1558,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               prices={prices}
               myUserId={userId}
               chat={chat}
+              tipTotals={tips.totals}
+              recentTips={tips.events}
+              onTip={userId ? (toUserId, toDisplayName) => setTipTarget({ toUserId, toDisplayName }) : undefined}
             />
           ) : chartView === 'chart' ? (
             <CandleChart
@@ -1674,25 +1704,42 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             )
           })()}
 
-          {/* Spectator banner — shown when viewing an arena without participating */}
+          {/* Spectator banner — distinct treatment with clear watcher capabilities */}
           {isSpectator && !isEnded && !isWaiting && (
-            <div className="p-4 flex items-center gap-3" style={{
+            <div className="relative overflow-hidden" style={{
               borderBottom: '2px solid #000',
               background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%)',
             }}>
-              <div className="text-2xl animate-pulse">👁️</div>
-              <div className="flex-1">
-                <div className="text-sm font-black tracking-wider" style={{ color: 'var(--gold)' }}>
-                  SPECTATING · {Object.keys(comp.participants).length} TRADERS IN BATTLE
+              <div className="p-4 flex items-center gap-3">
+                <div className="text-2xl">👁️</div>
+                <div className="flex-1">
+                  <div className="text-sm font-black tracking-wider" style={{ color: 'var(--gold)' }}>
+                    WATCHER MODE · {Object.keys(comp.participants).length} TRADERS IN BATTLE
+                  </div>
+                  <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    You&apos;re lurking. Can chat, cheer, and gift Tidal Points to favorites.
+                  </div>
                 </div>
-                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                  Watch the feed, chat, leaderboard live. Join to open positions.
-                </div>
+                <button onClick={joinAsPlayer}
+                  className="nb-btn nb-btn-primary py-2 px-4 text-sm">
+                  ⚡ JOIN ARENA
+                </button>
               </div>
-              <button onClick={joinAsPlayer}
-                className="nb-btn nb-btn-primary py-2 px-4 text-sm">
-                ⚡ JOIN NOW
-              </button>
+              {/* Watcher capabilities row */}
+              <div className="flex items-center gap-4 px-4 pb-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                <span className="flex items-center gap-1">
+                  <span style={{ color: 'var(--teal)' }}>💬</span>
+                  <span>chat with others</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span style={{ color: 'var(--gold)' }}>🎁</span>
+                  <span>gift points to traders</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span style={{ color: 'var(--profit)' }}>👁</span>
+                  <span>scrub replays after settle</span>
+                </span>
+              </div>
             </div>
           )}
 
@@ -2110,22 +2157,40 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                     <div className="text-xs" style={{ color: 'var(--text-dim)' }}>Talk smack to your opponents</div>
                   </div>
                 ) : (
-                  chat.map(m => (
-                    <div key={m.id} className="px-3 py-1.5" style={{ borderBottom: '1px solid var(--border-soft)' }}>
-                      <div className="flex items-baseline gap-1.5 mb-0.5">
-                        <span className="text-xs font-black truncate" style={{
-                          color: m.userId === userId ? 'var(--teal)' : 'var(--gold)',
-                          maxWidth: 100,
-                        }}>{m.displayName}</span>
-                        <span className="text-xs" style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
-                          {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                  chat.map(m => {
+                    const spectator = m.isSpectator
+                    return (
+                      <div key={m.id} className="px-3 py-1.5" style={{
+                        borderBottom: '1px solid var(--border-soft)',
+                        background: spectator ? 'rgba(255,215,0,0.03)' : undefined,
+                      }}>
+                        <div className="flex items-baseline gap-1.5 mb-0.5">
+                          <span className="text-xs font-black truncate" style={{
+                            color: m.userId === userId
+                              ? 'var(--teal)'
+                              : spectator ? 'var(--text-muted)' : 'var(--gold)',
+                            maxWidth: 100,
+                          }}>{m.displayName}</span>
+                          {spectator && (
+                            <span className="text-xs px-1" style={{
+                              background: 'var(--surface-3)',
+                              color: 'var(--text-dim)',
+                              fontSize: '8px', border: '1px solid var(--border-soft)',
+                              fontWeight: 900, letterSpacing: '0.05em',
+                            }}>
+                              👁
+                            </span>
+                          )}
+                          <span className="text-xs" style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
+                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="text-xs break-words" style={{ color: 'var(--text)', lineHeight: 1.35 }}>
+                          {m.text}
+                        </div>
                       </div>
-                      <div className="text-xs break-words" style={{ color: 'var(--text)', lineHeight: 1.35 }}>
-                        {m.text}
-                      </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
 

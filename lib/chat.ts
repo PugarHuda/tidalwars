@@ -6,6 +6,7 @@ export interface ChatMessage {
   displayName: string
   text: string
   timestamp: number
+  isSpectator?: boolean   // true if sender isn't a participant in this arena
 }
 
 // In-memory fallback (local dev / pre-Redis)
@@ -23,6 +24,7 @@ export async function postChatMessage(
   userId: string,
   displayName: string,
   text: string,
+  isSpectator = false,
 ): Promise<ChatMessage | null> {
   const clean = sanitize(text)
   if (!clean) return null
@@ -32,6 +34,7 @@ export async function postChatMessage(
     displayName: displayName.slice(0, 20),
     text: clean,
     timestamp: Date.now(),
+    isSpectator,
   }
 
   // Write-through: in-memory + Redis list

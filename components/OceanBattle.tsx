@@ -11,6 +11,9 @@ interface Props {
   prices: Record<string, number>
   myUserId: string
   chat: ChatMessage[]
+  tipTotals?: Record<string, number>     // toUserId → cumulative tip points received
+  recentTips?: Array<{ toUserId: string; amount: number; timestamp: number; id: string }>
+  onTip?: (toUserId: string, toDisplayName: string) => void
 }
 
 interface ShipState {
@@ -43,6 +46,7 @@ function yFor(pnlPct: number, height: number): number {
 
 export const OceanBattle = memo(function OceanBattle({
   comp, symbol, currentPrice, prices, myUserId, chat,
+  tipTotals = {}, recentTips = [], onTip,
 }: Props) {
   const W = 480, H = 200
 
@@ -287,6 +291,44 @@ export const OceanBattle = memo(function OceanBattle({
                   fill={ship.side === 'bid' ? 'var(--profit)' : 'var(--loss)'}>
                   {ship.side === 'bid' ? 'L' : 'S'}{ship.leverage}×
                 </text>
+              )}
+
+              {/* Tip total under the PnL — shows received gifts */}
+              {(() => {
+                const total = tipTotals[ship.userId] ?? 0
+                if (total <= 0) return null
+                return (
+                  <g>
+                    <text x={x} y={y + 22} fontSize="6.5" fontWeight="900"
+                      fill="var(--gold)" textAnchor="middle">
+                      🎁 {total >= 1000 ? `${(total / 1000).toFixed(1)}k` : total}
+                    </text>
+                  </g>
+                )
+              })()}
+
+              {/* Floating tip animations — last 2s tips rise above ship */}
+              {recentTips.filter(t => t.toUserId === ship.userId && Date.now() - t.timestamp < 2500).map(t => {
+                const age = (Date.now() - t.timestamp) / 2500
+                const floatY = y - 12 - age * 40   // rises 40px
+                const opacity = Math.max(0, 1 - age)
+                return (
+                  <text key={t.id} x={x} y={floatY} fontSize="9" fontWeight="900"
+                    fill="var(--gold)" textAnchor="middle" opacity={opacity}>
+                    +{t.amount} 🎁
+                  </text>
+                )
+              })}
+
+              {/* Gift button — click to tip this trader (not self, only if onTip wired + they're a participant) */}
+              {onTip && !ship.isMe && (
+                <g className="cursor-pointer" onClick={() => onTip(ship.userId, ship.displayName)}>
+                  <circle cx={x + 12} cy={y + 10} r="6.5"
+                    fill="var(--gold)" stroke="#000" strokeWidth="0.8" opacity="0.9" />
+                  <text x={x + 12} y={y + 13} fontSize="8" textAnchor="middle">
+                    🎁
+                  </text>
+                </g>
               )}
 
               {/* Chat speech bubble above ship */}

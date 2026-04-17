@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest } from 'next/server'
 import { getCompetition, getTradeEvents, getLastKnownPrices, updateLastKnownPrices } from '@/lib/store'
 import { getChatMessages } from '@/lib/chat'
+import { getTips } from '@/lib/tips'
 
 const PACIFICA_REST = process.env.NEXT_PUBLIC_PACIFICA_REST_URL ?? 'https://test-api.pacifica.fi/api/v1'
 
@@ -58,6 +59,7 @@ export async function GET(
         send('competition', comp)
         send('feed', (await getTradeEvents(id)).slice(0, 30))
         send('chat', await getChatMessages(id))
+        send('tips', await getTips(id))
 
         // If last-known prices are empty/stale, fetch fresh from Pacifica
         let prices = getLastKnownPrices()
