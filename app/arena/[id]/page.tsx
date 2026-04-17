@@ -652,8 +652,27 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const myEntry = liveLeaderboard.find(e => e.userId === userId)
   const myPositions: Position[] = comp?.participants?.[userId]?.positions ?? []
   const isEnded = comp?.status === 'ended'
+  // Spectator: we have a userId but we're not a participant in this arena
+  const isSpectator = !!comp && (!userId || !comp.participants[userId])
   const minutes = Math.floor(timeLeft / 60000)
   const seconds = Math.floor((timeLeft % 60000) / 1000)
+
+  async function joinAsPlayer() {
+    let uid = localStorage.getItem('userId')
+    if (!uid) {
+      uid = `user_${Math.random().toString(36).slice(2, 9)}`
+      localStorage.setItem('userId', uid)
+    }
+    const dn = localStorage.getItem('displayName') || prompt('Pick a display name to join:') || 'Anon'
+    localStorage.setItem('displayName', dn)
+    await fetch(`/api/competitions/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: uid, displayName: dn }),
+    })
+    // Soft refresh — the SSE stream will pick up the new participant
+    window.location.reload()
+  }
 
   if (!comp) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
@@ -1213,8 +1232,30 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             )
           })()}
 
-          {/* Trade form */}
-          {!isEnded ? (
+          {/* Spectator banner — shown when viewing an arena without participating */}
+          {isSpectator && !isEnded && (
+            <div className="p-4 flex items-center gap-3" style={{
+              borderBottom: '2px solid #000',
+              background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%)',
+            }}>
+              <div className="text-2xl animate-pulse">👁️</div>
+              <div className="flex-1">
+                <div className="text-sm font-black tracking-wider" style={{ color: 'var(--gold)' }}>
+                  SPECTATING · {Object.keys(comp.participants).length} TRADERS IN BATTLE
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Watch the feed, chat, leaderboard live. Join to open positions.
+                </div>
+              </div>
+              <button onClick={joinAsPlayer}
+                className="nb-btn nb-btn-primary py-2 px-4 text-sm">
+                ⚡ JOIN NOW
+              </button>
+            </div>
+          )}
+
+          {/* Trade form (players only) */}
+          {!isEnded && !isSpectator ? (
             <div id="trade-form" className="p-4" style={{ borderBottom: '2px solid #000' }}>
               {/* Mode selector */}
               <div className="grid grid-cols-2 gap-0 mb-3 text-xs" style={{ border: '2px solid #000' }}>

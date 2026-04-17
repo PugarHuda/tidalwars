@@ -519,17 +519,27 @@ function CompCard({
                 </span>
               )}
             </div>
-            <button
-              onClick={handleJoinClick}
-              disabled={joining}
-              className="nb-btn nb-btn-primary w-full py-2.5 text-xs"
-            >
-              {joining ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="animate-spin inline-block">◌</span> JOINING...
-                </span>
-              ) : nameInput.trim() ? `⚡ JOIN AS ${nameInput.trim().toUpperCase().slice(0, 12)}` : '⚡ JOIN ARENA'}
-            </button>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={handleJoinClick}
+                disabled={joining}
+                className="nb-btn nb-btn-primary col-span-2 py-2.5 text-xs"
+              >
+                {joining ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="animate-spin inline-block">◌</span> JOINING...
+                  </span>
+                ) : nameInput.trim() ? `⚡ JOIN AS ${nameInput.trim().toUpperCase().slice(0, 10)}` : '⚡ JOIN'}
+              </button>
+              <button
+                onClick={() => onJoin(comp.id, '')}
+                disabled={joining}
+                className="nb-btn nb-btn-ghost py-2.5 text-xs flex items-center justify-center gap-1"
+                title="Watch the arena without joining"
+              >
+                👁 WATCH
+              </button>
+            </div>
           </div>
         )}
       </div>
