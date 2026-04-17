@@ -872,11 +872,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* TESTNET signing modal — transparent preview of the Ed25519 payload */}
+      {/* TESTNET signing modal — Privy wallet if connected, else server demo keypair */}
       <SigningModal
         isOpen={pendingSign !== null}
         onClose={() => setPendingSign(null)}
-        onConfirm={() => {
+        onConfirmServerSign={() => {
           if (!pendingSign) return
           submitTrade(
             pendingSign.action,
@@ -888,8 +888,27 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             pendingSign.currentPrice,
           )
         }}
+        onPrivySubmitted={(response) => {
+          // Privy already signed + relayed; also record in our competition state for PnL
+          if (!pendingSign) return
+          setTradeFlash(pendingSign.side === 'bid' ? 'long' : 'short')
+          const pacificaOk = (response as { ok?: boolean })?.ok
+          setTradeMsg(pacificaOk
+            ? `⬡ SIGNED VIA PRIVY · Order landed on Pacifica`
+            : `⬡ SIGNED VIA PRIVY · Pacifica returned error (see console)`)
+          // Still record virtually so UI reflects position
+          submitTrade(
+            pendingSign.action,
+            pendingSign.clientOrderId,
+            pendingSign.symbol,
+            pendingSign.side,
+            pendingSign.amount,
+            pendingSign.leverage,
+            pendingSign.currentPrice,
+          )
+        }}
         trade={pendingSign}
-        signerPubkey={SIGNER_PUBKEY}
+        demoPubkey={SIGNER_PUBKEY}
         builderCode={BUILDER_CODE}
         loading={tradeLoading}
       />

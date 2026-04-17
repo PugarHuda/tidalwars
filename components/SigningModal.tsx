@@ -1,45 +1,65 @@
 'use client'
-import { X, FileKey, Zap } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { X, FileKey, Zap, AlertCircle } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { usePrivySolanaSign } from '@/lib/usePrivySolanaSign'
+import { sortJsonKeys, assemblePacificaBody } from '@/lib/pacifica-canonical'
+
+interface TradeIntent {
+  action: 'open' | 'close'
+  symbol: string
+  side: 'bid' | 'ask'
+  amount: number
+  leverage: number
+  currentPrice: number
+  clientOrderId: string
+}
 
 interface SigningModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: () => void
-  trade: {
-    action: 'open' | 'close'
-    symbol: string
-    side: 'bid' | 'ask'
-    amount: number
-    leverage: number
-    currentPrice: number
-    clientOrderId: string
-  } | null
-  signerPubkey: string
+  /** Called when user hits Sign & Submit AND Privy isn't available (→ server falls back to demo keypair) */
+  onConfirmServerSign: () => void
+  /** Called with the Pacifica API response after a successful Privy-signed relay */
+  onPrivySubmitted?: (response: unknown) => void
+  trade: TradeIntent | null
+  /** Demo keypair pubkey — used when Privy not connected */
+  demoPubkey: string
   builderCode: string
   loading?: boolean
 }
 
 /**
  * Transparent signing preview for TESTNET mode.
- * Shows the exact JSON payload that will be Ed25519-signed + submitted to Pacifica.
- * Educational for judges — proves nothing is faked. "Sign & Submit" confirms.
+ *
+ * When a Privy Solana wallet is connected → pops Privy's sign modal,
+ *   encodes the signature, relays to Pacifica via /api/pacifica/relay.
+ * Otherwise → "Sign & Submit" falls back to server signing with the demo
+ *   keypair (current behavior) so demos without wallet still work.
  */
 export default function SigningModal({
-  isOpen, onClose, onConfirm, trade, signerPubkey, builderCode, loading,
+  isOpen, onClose, onConfirmServerSign, onPrivySubmitted,
+  trade, demoPubkey, builderCode, loading: parentLoading,
 }: SigningModalProps) {
   const [mounted, setMounted] = useState(false)
+  const [privyLoading, setPrivyLoading] = useState(false)
+  const [privyError, setPrivyError] = useState<string | null>(null)
+
   useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    if (!isOpen) { setPrivyError(null); setPrivyLoading(false) }
+  }, [isOpen])
 
-  if (!mounted || !isOpen || !trade) return null
+  const { ready: privyReady, walletAddress: privyAddress, signPacifica } = usePrivySolanaSign()
 
-  // Build the exact payload that buildSignedBody() constructs server-side
-  const timestamp = Date.now()
-  const type = trade.action === 'open' ? 'create_market_order' : 'create_market_order'
-  const sidePayload = trade.action === 'close' ? (trade.side === 'bid' ? 'ask' : 'bid') : trade.side
+  // Signer pubkey shown in modal — prefer Privy wallet if connected
+  const signerPubkey = privyAddress ?? demoPubkey
+  const signerSource: 'privy' | 'demo' = privyReady ? 'privy' : 'demo'
 
-  const signedMessage = {
-    data: {
+  // Build the canonical payload that would be signed (for display + signing)
+  const canonicalAndPayload = useMemo(() => {
+    if (!trade) return null
+    const sidePayload = trade.action === 'close' ? (trade.side === 'bid' ? 'ask' : 'bid') : trade.side
+    const payload: Record<string, unknown> = {
       amount: String(trade.amount),
       builder_code: builderCode,
       client_order_id: trade.clientOrderId,
@@ -47,22 +67,61 @@ export default function SigningModal({
       side: sidePayload,
       slippage_percent: '1',
       symbol: trade.symbol,
-    },
-    expiry_window: 5000,
-    timestamp,
-    type,
-  }
+    }
+    const timestamp = Date.now()
+    const canonical = sortJsonKeys({
+      data: payload,
+      expiry_window: 5000,
+      timestamp,
+      type: 'create_market_order',
+    })
+    return { payload, canonical, timestamp }
+  }, [trade, builderCode])
 
-  const httpBody = {
-    account: signerPubkey,
-    signature: '<ED25519_SIGNATURE_BS58>',
-    timestamp,
-    expiry_window: 5000,
-    ...signedMessage.data,
-  }
+  if (!mounted || !isOpen || !trade || !canonicalAndPayload) return null
 
   const notional = trade.currentPrice * trade.amount * trade.leverage
   const margin = (trade.currentPrice * trade.amount) / trade.leverage
+  const loading = parentLoading || privyLoading
+
+  async function handleSignSubmit() {
+    setPrivyError(null)
+    if (!privyReady) {
+      // Fall back to server demo keypair path
+      onConfirmServerSign()
+      return
+    }
+    // Real Privy signing flow
+    setPrivyLoading(true)
+    try {
+      const signed = await signPacifica({
+        type: 'create_market_order',
+        payload: canonicalAndPayload!.payload,
+        timestamp: canonicalAndPayload!.timestamp,
+      })
+
+      const body = assemblePacificaBody({
+        account: signed.account,
+        signature: signed.signature,
+        timestamp: signed.timestamp,
+        expiryWindow: signed.expiryWindow,
+        payload: canonicalAndPayload!.payload,
+      })
+
+      const res = await fetch('/api/pacifica/relay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: 'orders/create_market', body }),
+      })
+      const json = await res.json()
+      onPrivySubmitted?.(json)
+      onClose()
+    } catch (e) {
+      setPrivyError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setPrivyLoading(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
@@ -130,14 +189,14 @@ export default function SigningModal({
               background: 'var(--bg)', border: '2px solid #000', color: 'var(--text)',
               lineHeight: 1.4, fontSize: '11px',
             }}>
-{JSON.stringify(signedMessage, null, 2)}
+{JSON.stringify(canonicalAndPayload.canonical, null, 2)}
             </pre>
             <div className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>
               Alpha-sorted keys · compact JSON · UTF-8 bytes → nacl.sign.detached → bs58 encode
             </div>
           </div>
 
-          {/* HTTP body */}
+          {/* HTTP body preview */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-xs font-black tracking-widest" style={{ color: 'var(--gold)' }}>
@@ -146,33 +205,75 @@ export default function SigningModal({
               <span className="text-xs px-1.5" style={{
                 background: 'var(--gold)', color: '#000', border: '1px solid #000', fontSize: '9px', fontWeight: 800,
               }}>
-                builder_code=TIDALWARS
+                builder_code={builderCode}
               </span>
             </div>
             <pre className="text-xs font-mono p-2.5 overflow-x-auto" style={{
               background: 'var(--bg)', border: '2px solid #000', color: 'var(--text)',
               lineHeight: 1.4, fontSize: '11px',
             }}>
-{JSON.stringify(httpBody, null, 2)}
+{JSON.stringify({
+  account: signerPubkey,
+  signature: '<ED25519_SIGNATURE_BS58>',
+  timestamp: canonicalAndPayload.timestamp,
+  expiry_window: 5000,
+  ...canonicalAndPayload.payload,
+}, null, 2)}
             </pre>
           </div>
 
           {/* Signer disclosure */}
           <div className="mb-4 p-2.5 text-xs" style={{
-            background: 'var(--surface-2)', border: '1px solid var(--border-soft)', color: 'var(--text-muted)',
+            background: 'var(--surface-2)',
+            border: `1px solid ${signerSource === 'privy' ? 'var(--profit)' : 'var(--border-soft)'}`,
+            color: 'var(--text-muted)',
           }}>
-            <div className="font-black mb-1 tracking-wider" style={{ color: 'var(--text)', fontSize: '11px' }}>
+            <div className="font-black mb-1 tracking-wider flex items-center gap-1.5"
+              style={{ color: 'var(--text)', fontSize: '11px' }}>
               🔑 SIGNING IDENTITY
+              {signerSource === 'privy' ? (
+                <span className="px-1.5 text-xs" style={{
+                  background: 'var(--profit)', color: '#000', border: '1px solid #000', fontSize: '9px',
+                }}>
+                  PRIVY WALLET
+                </span>
+              ) : (
+                <span className="px-1.5 text-xs" style={{
+                  background: 'var(--gold)', color: '#000', border: '1px solid #000', fontSize: '9px',
+                }}>
+                  DEMO KEYPAIR
+                </span>
+              )}
             </div>
             <div className="font-mono" style={{ fontSize: '10px', wordBreak: 'break-all' }}>
               {signerPubkey}
             </div>
             <div className="mt-1" style={{ fontSize: '10px', lineHeight: 1.4 }}>
-              <span style={{ color: 'var(--gold)' }}>Hackathon demo keypair.</span>
-              {' '}In production, this would be your Privy embedded Solana wallet via
-              <span style={{ color: 'var(--teal)' }}> api_agent_keys</span> session-key delegation.
+              {signerSource === 'privy' ? (
+                <>
+                  <span style={{ color: 'var(--profit)' }}>Your Privy embedded Solana wallet</span>
+                  {' will sign this order client-side — private key never leaves your browser.'}
+                </>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--gold)' }}>Hackathon demo keypair (server-side)</span>
+                  {' · Connect a Privy wallet to sign orders from your own address.'}
+                </>
+              )}
             </div>
           </div>
+
+          {/* Privy error */}
+          {privyError && (
+            <div className="mb-3 p-2.5 flex items-start gap-2 text-xs"
+              style={{ background: 'rgba(255,68,102,0.1)', border: '1px solid var(--loss)', color: 'var(--loss)' }}>
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div style={{ wordBreak: 'break-word' }}>
+                <div className="font-black">Signing failed</div>
+                <div style={{ fontSize: '10px', opacity: 0.9 }}>{privyError}</div>
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3">
@@ -180,16 +281,17 @@ export default function SigningModal({
               className="nb-btn nb-btn-ghost flex-1 py-2.5 text-sm">
               CANCEL
             </button>
-            <button onClick={onConfirm} disabled={loading}
+            <button onClick={handleSignSubmit} disabled={loading}
               className="nb-btn nb-btn-gold flex-[2] py-2.5 text-sm"
               style={{ background: 'var(--gold)', color: '#000', fontWeight: 900 }}>
               {loading ? (
                 <>
-                  <span className="animate-spin inline-block">◌</span> SIGNING & SUBMITTING...
+                  <span className="animate-spin inline-block">◌</span>{' '}
+                  {privyLoading ? 'AWAITING PRIVY SIGNATURE...' : 'SIGNING & SUBMITTING...'}
                 </>
               ) : (
                 <>
-                  <Zap className="w-4 h-4" /> SIGN & SUBMIT TO PACIFICA
+                  <Zap className="w-4 h-4" /> {signerSource === 'privy' ? 'SIGN WITH PRIVY' : 'SIGN & SUBMIT'}
                 </>
               )}
             </button>
