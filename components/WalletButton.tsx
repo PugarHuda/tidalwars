@@ -107,6 +107,29 @@ function WalletDropdown({ addr, onLogout }: { addr: string; onLogout: () => void
         )}
       </div>
 
+      {/* Token requirements */}
+      <div className="p-3" style={{ borderBottom: '1px solid var(--border-soft)' }}>
+        <div className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>TOKENS YOU NEED</div>
+        <div className="space-y-1.5 text-xs">
+          <div className="flex items-start gap-2 p-1.5" style={{ background: 'rgba(0,216,245,0.08)', border: '1px solid var(--teal)' }}>
+            <span className="font-black" style={{ color: 'var(--teal)', fontSize: '11px' }}>🌊 VIRTUAL mode</span>
+            <span style={{ color: 'var(--text-muted)' }}>
+              <span style={{ color: 'var(--text)', fontWeight: 700 }}>Nothing.</span> Every arena gives you $10k virtual USDC. No wallet needed.
+            </span>
+          </div>
+          <div className="flex items-start gap-2 p-1.5" style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid var(--gold)' }}>
+            <span className="font-black" style={{ color: 'var(--gold)', fontSize: '11px' }}>⬡ TESTNET mode</span>
+            <span style={{ color: 'var(--text-muted)' }}>
+              <span style={{ color: 'var(--text)', fontWeight: 700 }}>Testnet USDC on Solana.</span> Deposit via
+              <a href="https://test-app.pacifica.fi/" target="_blank" rel="noopener noreferrer"
+                style={{ color: 'var(--gold)', textDecoration: 'underline', marginLeft: 3 }}>
+                test-app.pacifica.fi
+              </a> (free faucet)
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* What this wallet does */}
       <div className="p-3" style={{ borderBottom: '1px solid var(--border-soft)' }}>
         <div className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>WHAT THIS WALLET DOES</div>
@@ -114,25 +137,25 @@ function WalletDropdown({ addr, onLogout }: { addr: string; onLogout: () => void
           <div className="flex items-start gap-2">
             <ShieldCheck className="w-3 h-3 mt-0.5 shrink-0" style={{ color: 'var(--teal)' }} />
             <span>
-              <span style={{ color: 'var(--text)' }}>Identity</span> — your persistent trader handle across all arenas
+              <span style={{ color: 'var(--text)' }}>Identity</span> — persistent trader handle across arenas
             </span>
           </div>
           <div className="flex items-start gap-2">
             <Zap className="w-3 h-3 mt-0.5 shrink-0" style={{ color: 'var(--gold)' }} />
             <span>
-              <span style={{ color: 'var(--text)' }}>Signing</span> — Ed25519-signs real Pacifica orders in TESTNET mode (private key stays in Privy iframe)
+              <span style={{ color: 'var(--text)' }}>Signing</span> — Ed25519-signs real Pacifica orders (private key stays in Privy iframe)
             </span>
           </div>
           <div className="flex items-start gap-2">
             <Zap className="w-3 h-3 mt-0.5 shrink-0" style={{ color: 'var(--profit)' }} />
             <span>
-              <span style={{ color: 'var(--text)' }}>Agent Keys</span> — bind once via Privy, auto-sign every subsequent trade without modal
+              <span style={{ color: 'var(--text)' }}>Agent Keys</span> — bind once, auto-sign every trade without modal
             </span>
           </div>
           <div className="flex items-start gap-2">
             <ShieldCheck className="w-3 h-3 mt-0.5 shrink-0" style={{ color: 'var(--teal)' }} />
             <span>
-              <span style={{ color: 'var(--text)' }}>Rewards</span> — future USDC claim payouts via Fuul will use this address
+              <span style={{ color: 'var(--text)' }}>Rewards</span> — future USDC prize payouts land here
             </span>
           </div>
         </div>
