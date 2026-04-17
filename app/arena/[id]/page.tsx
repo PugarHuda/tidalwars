@@ -9,6 +9,7 @@ import {
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
 import SigningModal from '@/components/SigningModal'
+import { CandleChart } from '@/components/CandleChart'
 import { usePacificaWs } from '@/lib/pacificaWs'
 import type { TrendingToken } from '@/lib/elfa'
 import type { ChatMessage } from '@/lib/chat'
@@ -392,6 +393,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [chatSending, setChatSending] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const [tradeMode, setTradeMode] = useState<'virtual' | 'testnet'>('virtual')
+  const [chartView, setChartView] = useState<'chart' | 'tide'>('chart')
   const [tradeFlash, setTradeFlash] = useState<'long' | 'short' | 'close' | null>(null)
   const [pendingSign, setPendingSign] = useState<{
     action: 'open' | 'close'
@@ -1056,15 +1058,48 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             })}
           </div>
 
-          {/* Ocean-themed Tide Gauge */}
-          <TideGauge
-            ticks={priceHistory}
-            symbol={symbol}
-            currentPrice={prices[symbol] ?? 0}
-            entryPrices={myPositions
-              .filter(p => p.symbol === symbol)
-              .map(p => ({ price: p.entryPrice, side: p.side }))}
-          />
+          {/* Chart view toggle (Candles from Pacifica /kline vs Tide Gauge ocean vibe) */}
+          <div className="flex" style={{ borderBottom: '2px solid #000', background: 'var(--surface)' }}>
+            <button onClick={() => setChartView('chart')}
+              className="flex-1 py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+              style={{
+                background: chartView === 'chart' ? 'var(--surface-2)' : 'var(--surface)',
+                color: chartView === 'chart' ? 'var(--teal)' : 'var(--text-muted)',
+                borderRight: '2px solid #000',
+                borderBottom: chartView === 'chart' ? '2px solid var(--teal)' : '2px solid transparent',
+              }}>
+              📊 CANDLES
+              <span style={{ fontSize: '9px', opacity: 0.6 }}>/kline</span>
+            </button>
+            <button onClick={() => setChartView('tide')}
+              className="flex-1 py-1.5 text-xs font-black tracking-widest transition-colors flex items-center justify-center gap-1.5"
+              style={{
+                background: chartView === 'tide' ? 'var(--surface-2)' : 'var(--surface)',
+                color: chartView === 'tide' ? 'var(--gold)' : 'var(--text-muted)',
+                borderBottom: chartView === 'tide' ? '2px solid var(--gold)' : '2px solid transparent',
+              }}>
+              🌊 TIDE GAUGE
+            </button>
+          </div>
+
+          {chartView === 'chart' ? (
+            <CandleChart
+              symbol={symbol}
+              currentPrice={prices[symbol] ?? 0}
+              entryPrices={myPositions
+                .filter(p => p.symbol === symbol)
+                .map(p => ({ price: p.entryPrice, side: p.side }))}
+            />
+          ) : (
+            <TideGauge
+              ticks={priceHistory}
+              symbol={symbol}
+              currentPrice={prices[symbol] ?? 0}
+              entryPrices={myPositions
+                .filter(p => p.symbol === symbol)
+                .map(p => ({ price: p.entryPrice, side: p.side }))}
+            />
+          )}
 
           {/* Market stats row */}
           {currentTicker && (currentTicker.openInterest > 0 || currentTicker.volume24h > 0) && (
