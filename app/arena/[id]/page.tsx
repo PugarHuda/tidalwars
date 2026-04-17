@@ -10,7 +10,9 @@ import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types
 import WalletButton from '@/components/WalletButton'
 import dynamic from 'next/dynamic'
 import ReplayModal from '@/components/ReplayModal'
+import KeyboardHelp from '@/components/KeyboardHelp'
 import { CandleChart } from '@/components/CandleChart'
+import { useKeyboard } from '@/lib/useKeyboard'
 
 // Privy-dependent components carry @privy-io/react-auth/solana + @solana/kit
 // + tweetnacl + bs58 + memo program (~200KB gzipped). Lazy-load so the initial
@@ -440,6 +442,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const agentKey = useAgentKey()
   const privy = usePrivySolanaSign()
   const [soundOn, setSoundOn] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => { setSoundOn(isSoundEnabled()) }, [])
   function toggleSound() {
@@ -714,6 +717,33 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
     }
   }, [chat.length, rightTab])
+
+  // Keyboard shortcuts — only fire when not typing, arena still active,
+  // and user is a participant (spectators can still use help/escape)
+  useKeyboard({
+    enabled: true,
+    onLong: () => { if (!isEnded && userId && comp?.participants?.[userId]) { setSide('bid'); handleTrade('open') } },
+    onShort: () => { if (!isEnded && userId && comp?.participants?.[userId]) { setSide('ask'); handleTrade('open') } },
+    onClose: () => {
+      if (isEnded || !userId) return
+      const pos = comp?.participants?.[userId]?.positions?.[0]
+      if (pos) handleTrade('close', pos.clientOrderId, pos)
+    },
+    onSubmit: () => { if (!isEnded && userId && comp?.participants?.[userId]) handleTrade('open') },
+    onLeverage: (lvl) => {
+      if (isEnded || !comp) return
+      setLeverage(Math.min(lvl, comp.maxLeverage))
+    },
+    onSymbol: (idx) => {
+      if (idx >= 0 && idx < SYMBOLS.length) setSymbol(SYMBOLS[idx])
+    },
+    onShowHelp: () => setHelpOpen(h => !h),
+    onEscape: () => {
+      if (helpOpen) setHelpOpen(false)
+      else if (replayOpen) setReplayOpen(false)
+      else if (pendingSign) setPendingSign(null)
+    },
+  })
 
   // Live leaderboard computed from comp state + merged prices (WS + REST)
   const liveLeaderboard = useMemo<LeaderboardEntry[]>(() => {
@@ -997,6 +1027,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
+      {/* Keyboard shortcuts help (? to toggle, Esc to close) */}
+      <KeyboardHelp isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+
       {/* TESTNET signing modal — Privy wallet if connected, else server demo keypair */}
       <SigningModal
         isOpen={pendingSign !== null}
@@ -1110,6 +1143,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             {soundOn
               ? <Volume2 className="w-3.5 h-3.5" style={{ color: 'var(--teal)' }} />
               : <VolumeX className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          <button onClick={() => setHelpOpen(true)}
+            className="nb-btn nb-btn-ghost py-1 px-2 hidden md:flex"
+            title="Keyboard shortcuts (press ? anytime)">
+            <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 900 }}>?</span>
           </button>
           <WalletButton />
         </div>
@@ -1515,20 +1553,75 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               </div>
 
-              {/* Order info */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-                <span>Notional <span className="font-bold" style={{ color: "var(--text)" }}>
-                  ${((prices[symbol] ?? 0) * parseFloat(amount || '0') * leverage).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </span></span>
-                <span>Margin <span className="font-bold" style={{ color: "var(--text)" }}>
-                  ${((prices[symbol] ?? 0) * parseFloat(amount || '0') / leverage).toFixed(2)}
-                </span></span>
-                {currentTicker?.fundingRate !== undefined && currentTicker.fundingRate !== 0 && (
-                  <span>Funding <span className="font-bold" style={{ color: currentTicker.fundingRate >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
-                    {currentTicker.fundingRate >= 0 ? '+' : ''}{(currentTicker.fundingRate * 100).toFixed(4)}%/8h
-                  </span></span>
-                )}
-              </div>
+              {/* Order info + impact preview */}
+              {(() => {
+                const amtNum = parseFloat(amount || '0')
+                const px = prices[symbol] ?? 0
+                const notional = px * amtNum * leverage
+                const newMargin = amtNum > 0 && px > 0 ? (px * amtNum) / leverage : 0
+                // Existing state (from the live wallet card computation)
+                const realized = comp.participants?.[userId]?.realizedPnl ?? 0
+                const existingMargin = myPositions.reduce((s, p) => s + (p.entryPrice * p.amount) / p.leverage, 0)
+                const existingEquity = 10000 + realized
+                const availableBefore = Math.max(0, existingEquity - existingMargin)
+                const availableAfter = Math.max(0, existingEquity - existingMargin - newMargin)
+                // Margin utilization ratio (how much of equity is locked)
+                const utilBefore = existingEquity > 0 ? (existingMargin / existingEquity) * 100 : 0
+                const utilAfter = existingEquity > 0 ? ((existingMargin + newMargin) / existingEquity) * 100 : 0
+                const utilColor = utilAfter > 80 ? 'var(--loss)' : utilAfter > 50 ? 'var(--gold)' : 'var(--profit)'
+                const insufficientMargin = newMargin > availableBefore + 0.01
+
+                return (
+                  <div className="mb-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      <span>Notional <span className="font-bold" style={{ color: "var(--text)" }}>
+                        ${notional.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </span></span>
+                      <span>Margin <span className="font-bold" style={{ color: "var(--text)" }}>
+                        ${newMargin.toFixed(2)}
+                      </span></span>
+                      {currentTicker?.fundingRate !== undefined && currentTicker.fundingRate !== 0 && (
+                        <span>Funding <span className="font-bold" style={{ color: currentTicker.fundingRate >= 0 ? 'var(--profit)' : 'var(--loss)' }}>
+                          {currentTicker.fundingRate >= 0 ? '+' : ''}{(currentTicker.fundingRate * 100).toFixed(4)}%/8h
+                        </span></span>
+                      )}
+                    </div>
+
+                    {/* Impact preview — after-trade utilization */}
+                    {amtNum > 0 && px > 0 && (
+                      <div className="mt-2 p-2 text-xs"
+                        style={{
+                          background: insufficientMargin ? 'rgba(255,68,102,0.08)' : 'var(--surface)',
+                          border: `1px solid ${insufficientMargin ? 'var(--loss)' : 'var(--border-soft)'}`,
+                        }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                            {insufficientMargin ? '⚠ INSUFFICIENT BALANCE' : 'AFTER TRADE'}
+                          </span>
+                          <span className="font-black font-mono" style={{ color: utilColor, fontSize: '11px' }}>
+                            {utilBefore.toFixed(0)}% → {utilAfter.toFixed(0)}% utilized
+                          </span>
+                        </div>
+                        <div className="h-1.5 mb-1" style={{ background: 'var(--bg)', border: '1px solid var(--border-soft)' }}>
+                          <div className="h-full transition-all"
+                            style={{ width: `${Math.min(100, utilAfter)}%`, background: utilColor }} />
+                        </div>
+                        <div className="flex justify-between" style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
+                          <span>Available: <span className="font-mono">${availableBefore.toFixed(0)}</span>
+                            <span style={{ color: 'var(--text-dim)' }}> → </span>
+                            <span className="font-mono font-black" style={{ color: insufficientMargin ? 'var(--loss)' : 'var(--text)' }}>
+                              ${availableAfter.toFixed(0)}
+                            </span>
+                          </span>
+                          {!insufficientMargin && utilAfter > 80 && (
+                            <span style={{ color: 'var(--loss)' }}>High leverage exposure</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {(prices[symbol] ?? 0) === 0 && (
                 <div className="mb-2 text-xs text-center py-1.5 px-3 font-bold"
