@@ -8,12 +8,16 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { name, creatorId, durationMinutes, allowedSymbols, maxLeverage } = body
+  const { name, creatorId, durationMinutes, startDelaySeconds, allowedSymbols, maxLeverage } = body
 
   if (!name || !creatorId || !durationMinutes) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const comp = await createCompetition({ name, creatorId, durationMinutes, allowedSymbols, maxLeverage })
+  const comp = await createCompetition({
+    name, creatorId, durationMinutes,
+    startDelaySeconds: Number(startDelaySeconds ?? 0),
+    allowedSymbols, maxLeverage,
+  })
   return NextResponse.json(comp, { status: 201 })
 }

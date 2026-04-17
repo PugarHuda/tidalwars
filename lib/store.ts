@@ -82,22 +82,25 @@ export async function createCompetition(params: {
   name: string
   creatorId: string
   durationMinutes: number
+  startDelaySeconds?: number   // If >0, arena opens in lobby state until startsAt
   allowedSymbols?: string[]
   maxLeverage?: number
 }): Promise<Competition> {
   const id = randomUUID()
   const now = Date.now()
+  const delay = Math.max(0, params.startDelaySeconds ?? 0) * 1000
+  const startsAt = now + delay
   const comp: Competition = {
     id,
     name: params.name,
     creatorId: params.creatorId,
-    startsAt: now,
-    endsAt: now + params.durationMinutes * 60 * 1000,
+    startsAt,
+    endsAt: startsAt + params.durationMinutes * 60 * 1000,
     durationMinutes: params.durationMinutes,
     startingBalance: STARTING_BALANCE,
     allowedSymbols: params.allowedSymbols ?? ALLOWED_SYMBOLS,
     maxLeverage: params.maxLeverage ?? 10,
-    status: 'active',
+    status: delay > 0 ? 'waiting' : 'active',
     participants: {},
     createdAt: now,
   }
@@ -142,7 +145,13 @@ export async function settleCompetition(id: string, prices?: Record<string, numb
 export async function getCompetition(id: string): Promise<Competition | undefined> {
   const comp = await loadComp(id)
   if (!comp) return undefined
-  if (comp.status === 'active' && Date.now() > comp.endsAt) {
+  const now = Date.now()
+  // Auto-flip waiting → active when startsAt hits (persist the status change)
+  if (comp.status === 'waiting' && now >= comp.startsAt) {
+    comp.status = 'active'
+    await saveComp(comp)
+  }
+  if (comp.status === 'active' && now > comp.endsAt) {
     await settleCompetition(id)
     return competitions.get(id)
   }
@@ -150,13 +159,14 @@ export async function getCompetition(id: string): Promise<Competition | undefine
 }
 
 export async function getAllCompetitions(): Promise<Competition[]> {
-  // Load IDs from Redis (if available) to populate in-memory cache
   const ids = await ksmembers('comp_ids')
   await Promise.all(ids.map(id => loadComp(id)))
 
+  const now = Date.now()
   return Array.from(competitions.values())
     .map(comp => {
-      if (comp.status === 'active' && Date.now() > comp.endsAt) comp.status = 'ended'
+      if (comp.status === 'waiting' && now >= comp.startsAt) comp.status = 'active'
+      if (comp.status === 'active' && now > comp.endsAt) comp.status = 'ended'
       return comp
     })
     .sort((a, b) => b.createdAt - a.createdAt)

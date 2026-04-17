@@ -827,6 +827,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const myEntry = liveLeaderboard.find(e => e.userId === userId)
   const myPositions: Position[] = comp?.participants?.[userId]?.positions ?? []
   const isEnded = comp?.status === 'ended'
+  const isWaiting = comp?.status === 'waiting'
 
   // Trigger whale sound + confetti setup once user has won (fires when winner screen first appears)
   const playedWinSoundRef = useRef(false)
@@ -1552,8 +1553,38 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             )
           })()}
 
+          {/* Lobby countdown banner — shown when arena hasn't started yet */}
+          {isWaiting && comp && (() => {
+            const ms = Math.max(0, comp.startsAt - Date.now())
+            const lobbyMinutes = Math.floor(ms / 60000)
+            const lobbySeconds = Math.floor((ms % 60000) / 1000)
+            return (
+              <div className="p-6 flex flex-col items-center text-center gap-2"
+                style={{ borderBottom: '2px solid #000', background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%)' }}>
+                <div className="text-5xl animate-pulse">⏳</div>
+                <div className="text-xs font-black tracking-widest" style={{ color: 'var(--gold)' }}>
+                  LOBBY · ARENA OPENS IN
+                </div>
+                <div className="font-mono font-black text-4xl" style={{ color: 'var(--teal)' }}>
+                  {lobbyMinutes}:{lobbySeconds.toString().padStart(2, '0')}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {Object.keys(comp.participants).length} pre-joined · trading unlocks when countdown hits zero
+                </div>
+                {isSpectator && (
+                  <button onClick={joinAsPlayer} className="nb-btn nb-btn-primary py-2 px-4 text-sm mt-1">
+                    ⚡ PRE-JOIN LOBBY
+                  </button>
+                )}
+                <div className="text-xs italic mt-1" style={{ color: 'var(--text-dim)', fontSize: '10px' }}>
+                  Chat is open · get to know your opponents
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Spectator banner — shown when viewing an arena without participating */}
-          {isSpectator && !isEnded && (
+          {isSpectator && !isEnded && !isWaiting && (
             <div className="p-4 flex items-center gap-3" style={{
               borderBottom: '2px solid #000',
               background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%)',
@@ -1574,8 +1605,8 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </div>
           )}
 
-          {/* Trade form (players only) */}
-          {!isEnded && !isSpectator ? (
+          {/* Trade form (players only, not during lobby) */}
+          {!isEnded && !isSpectator && !isWaiting ? (
             <div id="trade-form" className="p-4" style={{ borderBottom: '2px solid #000' }}>
               {/* Mode selector */}
               <div className="grid grid-cols-2 gap-0 mb-3 text-xs" style={{ border: '2px solid #000' }}>

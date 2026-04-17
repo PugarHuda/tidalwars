@@ -65,6 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const comp = await getCompetition(id)
     if (!comp) return NextResponse.json({ error: 'Competition not found' }, { status: 404 })
     if (comp.status === 'ended') return NextResponse.json({ error: 'Competition ended' }, { status: 400 })
+    if (comp.status === 'waiting') return NextResponse.json({ error: 'Arena in lobby — wait for countdown' }, { status: 400 })
     const participant = comp.participants[userId]
     if (!participant) return NextResponse.json({ error: 'Not a participant' }, { status: 403 })
 

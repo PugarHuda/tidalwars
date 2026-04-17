@@ -15,6 +15,14 @@ const DURATIONS = [
   { label: '4 hours', value: 240 },
 ]
 
+const START_DELAYS = [
+  { label: 'Start now',     value: 0 },
+  { label: 'Lobby 1 min',   value: 60 },
+  { label: 'Lobby 3 min',   value: 180 },
+  { label: 'Lobby 5 min',   value: 300 },
+  { label: 'Lobby 10 min',  value: 600 },
+]
+
 const TICKER_SYMBOLS = ['BTC', 'ETH', 'SOL', 'WIF', 'BONK']
 
 export default function Home() {
@@ -22,6 +30,7 @@ export default function Home() {
   const [competitions, setCompetitions] = useState<Competition[]>([])
   const [name, setName] = useState('')
   const [duration, setDuration] = useState(30)
+  const [startDelay, setStartDelay] = useState(0)
   const [displayName, setDisplayName] = useState('')
   const [creating, setCreating] = useState(false)
   const [globalStats, setGlobalStats] = useState<{ totalTraders: number; globalTrades: number; totalCompetitions: number } | null>(null)
@@ -57,7 +66,7 @@ export default function Home() {
       const res = await fetch('/api/competitions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, creatorId: userId, durationMinutes: duration }),
+        body: JSON.stringify({ name, creatorId: userId, durationMinutes: duration, startDelaySeconds: startDelay }),
       })
       const comp = await res.json()
 
@@ -94,7 +103,7 @@ export default function Home() {
     router.push(`/arena/${compId}`)
   }
 
-  const active = competitions.filter(c => c.status === 'active')
+  const active = competitions.filter(c => c.status === 'active' || c.status === 'waiting')
   const ended = competitions.filter(c => c.status === 'ended')
 
   return (
@@ -219,7 +228,7 @@ export default function Home() {
             <Zap className="w-4 h-4" style={{ color: 'var(--teal)' }} />
             <span className="text-sm font-black tracking-[0.15em]" style={{ color: 'var(--teal)' }}>LAUNCH COMPETITION</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
             <div>
               <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Your Name</label>
               <input
@@ -239,10 +248,20 @@ export default function Home() {
                 onKeyDown={e => e.key === 'Enter' && handleCreate()}
               />
             </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
             <div>
               <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Duration</label>
               <select className="nb-select" value={duration} onChange={e => setDuration(Number(e.target.value))}>
                 {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                Start <span style={{ color: 'var(--gold)' }}>· lobby time</span>
+              </label>
+              <select className="nb-select" value={startDelay} onChange={e => setStartDelay(Number(e.target.value))}>
+                {START_DELAYS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
             </div>
           </div>
@@ -419,7 +438,8 @@ function CompCard({
   ended?: boolean
 }) {
   const count = Object.keys(comp.participants).length
-  const [timeLeft, setTimeLeft] = useState(Math.max(0, comp.endsAt - Date.now()))
+  const isWaiting = comp.status === 'waiting'
+  const [now, setNow] = useState(Date.now())
   const [joining, setJoining] = useState(false)
   const [nameInput, setNameInput] = useState(() =>
     typeof window !== 'undefined' ? (localStorage.getItem('displayName') ?? '') : ''
@@ -428,9 +448,13 @@ function CompCard({
 
   useEffect(() => {
     if (ended) return
-    const t = setInterval(() => setTimeLeft(Math.max(0, comp.endsAt - Date.now())), 1000)
+    const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
-  }, [comp.endsAt, ended])
+  }, [ended])
+
+  const timeLeft = isWaiting
+    ? Math.max(0, comp.startsAt - now)
+    : Math.max(0, comp.endsAt - now)
 
   const minutes = Math.floor(timeLeft / 60000)
   const seconds = Math.floor((timeLeft % 60000) / 1000)
@@ -463,9 +487,11 @@ function CompCard({
           <span className="text-xs font-black px-2 py-0.5 shrink-0" style={
             ended
               ? { background: 'var(--surface-3)', color: 'var(--text-muted)', border: '1px solid var(--border-soft)' }
-              : { background: 'var(--profit)', color: '#000', border: '2px solid #000' }
+              : isWaiting
+                ? { background: 'var(--gold)', color: '#000', border: '2px solid #000' }
+                : { background: 'var(--profit)', color: '#000', border: '2px solid #000' }
           }>
-            {ended ? 'ENDED' : '● LIVE'}
+            {ended ? 'ENDED' : isWaiting ? '⏳ LOBBY' : '● LIVE'}
           </span>
         </div>
         <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -476,7 +502,11 @@ function CompCard({
           <span className="flex items-center gap-1.5">
             <Clock className="w-3 h-3" style={{ color: ended ? 'var(--text-muted)' : 'var(--gold)' }} />
             <span style={{ color: ended ? 'var(--text-muted)' : 'var(--gold)', fontWeight: 700 }}>
-              {ended ? 'Ended' : timeLeft === 0 ? 'Ending...' : `${minutes}m ${seconds.toString().padStart(2, '0')}s`}
+              {ended
+                ? 'Ended'
+                : isWaiting
+                  ? `starts in ${minutes}m ${seconds.toString().padStart(2, '0')}s`
+                  : timeLeft === 0 ? 'Ending...' : `${minutes}m ${seconds.toString().padStart(2, '0')}s`}
             </span>
           </span>
         </div>
