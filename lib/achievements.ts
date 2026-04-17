@@ -17,6 +17,21 @@ export const ACHIEVEMENTS: Record<string, Achievement> = {
   tide_rider:      { id: 'tide_rider',      emoji: '🌊', title: 'Tide Rider',      description: 'Held a position through a ±1% price move' },
   chatter:         { id: 'chatter',         emoji: '💬', title: 'Chatter',         description: 'Sent 5+ chat messages in one arena' },
   kraken_tier:     { id: 'kraken_tier',     emoji: '🐙', title: 'Kraken Tier',     description: 'Reached >10% ROI — top of the food chain' },
+
+  // Timing-based achievements
+  final_second:    { id: 'final_second',    emoji: '⏱️', title: 'Last Breath',     description: 'Opened a position in the last 15 seconds' },
+  early_bird:      { id: 'early_bird',      emoji: '🌅', title: 'Early Bird',      description: 'Opened in the first 30 seconds of the arena' },
+  scalper:         { id: 'scalper',         emoji: '⚔️', title: 'Scalper',         description: 'Closed a position within 10 seconds of opening' },
+
+  // Streak / pattern achievements
+  comeback:        { id: 'comeback',        emoji: '🔄', title: 'Comeback Kid',    description: 'Went from last place to top 3' },
+  triple_threat:   { id: 'triple_threat',   emoji: '🎰', title: 'Triple Threat',   description: 'Won 3 closes in a row without a loss' },
+  diversified:     { id: 'diversified',     emoji: '🌐', title: 'Diversified',     description: 'Had positions on 3+ different symbols' },
+  flipper:         { id: 'flipper',         emoji: '↕️', title: 'Flipper',         description: 'Closed a position and flipped to the opposite side' },
+
+  // Copy-trading / social achievements
+  copycat:         { id: 'copycat',         emoji: '📋', title: 'Copycat',         description: 'Used Copy Trade on another player\'s position' },
+  influencer:      { id: 'influencer',      emoji: '⭐', title: 'Influencer',      description: 'Had one of your trades copied by another player' },
 }
 
 export function loadUnlocked(arenaId: string): Set<string> {

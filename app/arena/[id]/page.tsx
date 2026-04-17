@@ -470,6 +470,10 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set())
   const [achievementToast, setAchievementToast] = useState<Achievement | null>(null)
   const chatCountRef = useRef(0)
+  const winStreakRef = useRef(0)
+  const openTimesRef = useRef<Record<string, number>>({})  // clientOrderId → open ms
+  const previousRankRef = useRef<number | null>(null)
+  const previousSideRef = useRef<Record<string, 'bid' | 'ask'>>({})  // symbol → last side closed
 
   useEffect(() => { setUnlocked(loadUnlocked(id)) }, [id])
 
@@ -631,6 +635,24 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           if (tLeverage === comp?.maxLeverage) unlock('max_leverage')
           if (elfaTokens.some(t => t.symbol === tSymbol && t.rank <= 10)) unlock('trending_trade')
 
+          // Timing achievements
+          const now = Date.now()
+          if (comp && now - comp.startsAt < 30_000) unlock('early_bird')
+          if (comp && comp.endsAt - now < 15_000) unlock('final_second')
+
+          // Track open timestamp for scalper achievement (close <10s after open)
+          if (clientOrderId) openTimesRef.current[clientOrderId] = now
+
+          // Diversified: currently holding positions on 3+ different symbols
+          const uniqueSymbols = new Set((comp?.participants?.[userId]?.positions ?? []).map(p => p.symbol))
+          uniqueSymbols.add(tSymbol)
+          if (uniqueSymbols.size >= 3) unlock('diversified')
+
+          // Flipper: this side differs from the last close on same symbol
+          if (previousSideRef.current[tSymbol] && previousSideRef.current[tSymbol] !== tSide) {
+            unlock('flipper')
+          }
+
           setTradeMsg(onChain
             ? `⬡ ORDER ON PACIFICA · ${data.pacifica.orderId?.slice(0, 10)}...`
             : tradeMode === 'testnet'
@@ -649,10 +671,36 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
           if (pnl >= 100) unlock('big_win')
           const margin = (currentPrice * tAmount) / tLeverage
           if (margin > 0 && (pnl / margin) * 100 >= 5) unlock('whale_hunt')
-          // If total ROI now > 10%, unlock kraken
           const totalRealized = (comp?.participants?.[userId]?.realizedPnl ?? 0) + pnl
           if ((totalRealized / 10000) * 100 >= 10) unlock('kraken_tier')
+
+          // Timing: scalper (<10s hold time)
+          if (clientOrderId && openTimesRef.current[clientOrderId]) {
+            const holdMs = Date.now() - openTimesRef.current[clientOrderId]
+            if (holdMs < 10_000) unlock('scalper')
+            delete openTimesRef.current[clientOrderId]
+          }
+
+          // Win streak: triple_threat — 3 wins in a row
+          if (pnl > 0) {
+            winStreakRef.current += 1
+            if (winStreakRef.current >= 3) unlock('triple_threat')
+          } else {
+            winStreakRef.current = 0
+          }
+
+          // Remember this side for flipper detection on next open
+          previousSideRef.current[tSymbol] = tSide
         }
+
+        // Comeback: if we were last-place and now top-3, unlock
+        const myNewRank = liveLeaderboard.find(e => e.userId === userId)?.rank
+        const totalPlayers = liveLeaderboard.length
+        if (myNewRank !== undefined && previousRankRef.current !== null &&
+            previousRankRef.current === totalPlayers && myNewRank <= 3 && totalPlayers >= 4) {
+          unlock('comeback')
+        }
+        if (myNewRank !== undefined) previousRankRef.current = myNewRank
       } else {
         setTradeMsg(`⚠ ${data.error}`)
       }
@@ -689,6 +737,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     setSide(ev.side)
     setAmount(String(ev.amount))
     setLeverage(ev.leverage)
+    unlock('copycat')
     // Flash a quick toast
     setTradeMsg(`📋 Copied ${ev.displayName}'s ${ev.side === 'bid' ? 'LONG' : 'SHORT'} ${ev.amount} ${ev.symbol} · review & execute`)
     setTimeout(() => setTradeMsg(''), 4000)
