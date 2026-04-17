@@ -8,10 +8,17 @@ import {
 } from 'lucide-react'
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
-import SigningModal from '@/components/SigningModal'
+import dynamic from 'next/dynamic'
 import ReplayModal from '@/components/ReplayModal'
-import AgentKeyPanel from '@/components/AgentKeyPanel'
 import { CandleChart } from '@/components/CandleChart'
+
+// Privy-dependent components carry @privy-io/react-auth/solana + @solana/kit
+// + tweetnacl + bs58 + memo program (~200KB gzipped). Lazy-load so the initial
+// arena bundle stays lean; only hydrate these when Privy flows are engaged.
+const SigningModal = dynamic(() => import('@/components/SigningModal'), { ssr: false })
+const AgentKeyPanel = dynamic(() => import('@/components/AgentKeyPanel'), { ssr: false })
+// Lazy the hooks too — they pull Privy's solana subpath which transitively
+// imports all the Solana crypto deps
 import { useAgentKey } from '@/lib/useAgentKey'
 import { usePrivySolanaSign } from '@/lib/usePrivySolanaSign'
 import { usePacificaWs } from '@/lib/pacificaWs'
