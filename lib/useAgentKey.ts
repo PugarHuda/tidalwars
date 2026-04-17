@@ -8,32 +8,41 @@ import type { SignedPacificaRequest, UsePrivySolanaSign } from './usePrivySolana
 /**
  * Ed25519 keypair held ONLY in React state — never persisted, never exposed.
  * When user tabs away or refreshes, the key is gone and must be re-bound.
+ *
+ * Bind modes:
+ *   'pacifica' — registered with Pacifica /agent/bind. Real on-chain orders
+ *                work without Privy modal per trade.
+ *   'local'    — Pacifica rejected bind (account not whitelisted/deposited).
+ *                Key still used for fast virtual trades + signature preview.
+ *                Real on-chain orders will still fail.
  */
+export type BindMode = 'pacifica' | 'local'
+
 interface AgentKey {
-  publicKey: string        // bs58 Solana pubkey
-  secretKey: Uint8Array    // 64 bytes (nacl format)
-  mainAccount: string      // The user's main Solana pubkey that bound this agent
+  publicKey: string
+  secretKey: Uint8Array
+  mainAccount: string
   boundAt: number
+  mode: BindMode
 }
 
 export interface UseAgentKey {
   agent: AgentKey | null
   bound: boolean
-  boundFor: string | null  // main account this agent was bound for
+  mode: BindMode | null
+  boundFor: string | null
   /**
-   * Generate a fresh ephemeral keypair and ask Privy to sign the bind
-   * message. Returns once Pacifica confirms the bind.
+   * Sign bind_agent_wallet via Privy, relay to Pacifica. If Pacifica rejects
+   * (common for non-deposited accounts), fall back to 'local' mode which
+   * still gives the no-modal-per-trade UX for virtual orders.
    */
-  bind: (privy: UsePrivySolanaSign) => Promise<{
+  bind: (privy: UsePrivySolanaSign, opts?: { allowLocalFallback?: boolean }) => Promise<{
     ok: boolean
+    mode: BindMode
     agentPubkey: string
     pacifica?: unknown
     error?: string
   }>
-  /**
-   * Sign an order with the agent keypair (no user prompt). Caller must
-   * check `bound` first. Returns the assembled Pacifica HTTP body.
-   */
   signOrder: (params: {
     type: string
     payload: Record<string, unknown>
@@ -52,23 +61,24 @@ function generateKeypair() {
 export function useAgentKey(): UseAgentKey {
   const [agent, setAgent] = useState<AgentKey | null>(null)
 
-  const bind = useCallback(async (privy: UsePrivySolanaSign) => {
+  const bind = useCallback(async (privy: UsePrivySolanaSign, opts?: { allowLocalFallback?: boolean }) => {
     if (!privy.ready || !privy.walletAddress) {
-      return { ok: false, agentPubkey: '', error: 'Privy wallet not connected' }
+      return { ok: false, mode: 'local' as BindMode, agentPubkey: '', error: 'Privy wallet not connected' }
     }
+    const allowFallback = opts?.allowLocalFallback !== false  // default true
 
-    // 1) Generate ephemeral keypair (client-side, never transmitted raw)
     const ephemeral = generateKeypair()
 
+    let mainAccount = privy.walletAddress
+    let pacificaErr: unknown = null
+
     try {
-      // 2) Ask Privy to sign the bind_agent_wallet message (user's main wallet
-      //    authorizes this agent pubkey to act on their behalf)
       const signed = await privy.signPacifica({
         type: 'bind_agent_wallet',
         payload: { agent_wallet: ephemeral.publicKey },
       })
+      mainAccount = signed.account
 
-      // 3) Relay to Pacifica /agent/bind
       const body = assemblePacificaBody({
         account: signed.account,
         signature: signed.signature,
@@ -82,21 +92,38 @@ export function useAgentKey(): UseAgentKey {
         body: JSON.stringify({ endpoint: 'agent/bind', body }),
       })
       const data = await res.json()
-      if (!res.ok || !data.ok) {
-        return { ok: false, agentPubkey: ephemeral.publicKey, pacifica: data, error: 'Pacifica rejected bind' }
+
+      if (res.ok && data.ok) {
+        // ✅ Pacifica accepted
+        setAgent({
+          publicKey: ephemeral.publicKey, secretKey: ephemeral.secretKey,
+          mainAccount, boundAt: Date.now(), mode: 'pacifica',
+        })
+        return { ok: true, mode: 'pacifica' as BindMode, agentPubkey: ephemeral.publicKey, pacifica: data }
       }
 
-      // 4) Stash the keypair in React state. Only now, after Pacifica confirmed.
-      setAgent({
-        publicKey: ephemeral.publicKey,
-        secretKey: ephemeral.secretKey,
-        mainAccount: signed.account,
-        boundAt: Date.now(),
-      })
-      return { ok: true, agentPubkey: ephemeral.publicKey, pacifica: data }
+      // Pacifica rejected — fall back to local if allowed
+      pacificaErr = data
     } catch (e) {
-      return { ok: false, agentPubkey: ephemeral.publicKey, error: e instanceof Error ? e.message : String(e) }
+      pacificaErr = e instanceof Error ? e.message : String(e)
+      // If Privy itself failed (user cancelled), don't fallback — bail
+      if (String(pacificaErr).toLowerCase().includes('reject') ||
+          String(pacificaErr).toLowerCase().includes('cancel')) {
+        return { ok: false, mode: 'local' as BindMode, agentPubkey: ephemeral.publicKey, error: 'Sign request cancelled' }
+      }
     }
+
+    // Fallback to local session mode
+    if (!allowFallback) {
+      return { ok: false, mode: 'local' as BindMode, agentPubkey: ephemeral.publicKey,
+        pacifica: pacificaErr, error: 'Pacifica bind rejected (account not deposited/whitelisted)' }
+    }
+
+    setAgent({
+      publicKey: ephemeral.publicKey, secretKey: ephemeral.secretKey,
+      mainAccount, boundAt: Date.now(), mode: 'local',
+    })
+    return { ok: true, mode: 'local' as BindMode, agentPubkey: ephemeral.publicKey, pacifica: pacificaErr }
   }, [])
 
   const signOrder = useCallback((params: { type: string; payload: Record<string, unknown> }) => {
@@ -136,6 +163,7 @@ export function useAgentKey(): UseAgentKey {
   return {
     agent,
     bound: agent !== null,
+    mode: agent?.mode ?? null,
     boundFor: agent?.mainAccount ?? null,
     bind,
     signOrder,

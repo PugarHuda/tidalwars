@@ -13,6 +13,8 @@ import ReplayModal from '@/components/ReplayModal'
 import KeyboardHelp from '@/components/KeyboardHelp'
 import Confetti from '@/components/Confetti'
 import ShipShop from '@/components/ShipShop'
+import LiquidationBroadcast from '@/components/LiquidationBroadcast'
+import ArenaSettings from '@/components/ArenaSettings'
 import { CandleChart } from '@/components/CandleChart'
 import { OceanBattle } from '@/components/OceanBattle'
 import { useKeyboard } from '@/lib/useKeyboard'
@@ -447,6 +449,12 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const [soundOn, setSoundOn] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [shopOpen, setShopOpen] = useState(false)
+  const [liqBroadcast, setLiqBroadcast] = useState<{ id: string; displayName: string; symbol: string; loss: number } | null>(null)
+  const seenLiqsRef = useRef(new Set<string>())
+
+  // Track previous ranks to animate rank deltas
+  const prevRanksRef = useRef<Record<string, number>>({})
+  const [rankDeltas, setRankDeltas] = useState<Record<string, { delta: number; ts: number }>>({})
 
   useEffect(() => { setSoundOn(isSoundEnabled()) }, [])
   function toggleSound() {
@@ -553,8 +561,8 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
 
     // TESTNET mode flow
     if (tradeMode === 'testnet') {
-      // Fast path: agent key bound → sign with agent + relay (NO modal, NO prompt)
-      if (agentKey.bound) {
+      // Fast path: agent bound via Pacifica → sign + relay (NO modal)
+      if (agentKey.bound && agentKey.mode === 'pacifica') {
         const orderId = clientOrderId ?? crypto.randomUUID()
         const sidePayload = action === 'close' ? (tradeSide === 'bid' ? 'ask' : 'bid') : tradeSide
         try {
@@ -583,12 +591,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
         } catch (e) {
           setTradeMsg(`⚠ Agent sign failed: ${e instanceof Error ? e.message : String(e)}`)
         }
-        // Still record in competition state for virtual PnL
         await submitTrade(action, orderId, tradeSymbol, tradeSide, tradeAmount, tradeLeverage, currentPrice)
         return
       }
 
-      // Slow path: no agent yet → show signing modal (user must approve each trade)
+      // Local session mode → skip modal, record virtual trade immediately
+      if (agentKey.bound && agentKey.mode === 'local') {
+        const orderId = clientOrderId ?? crypto.randomUUID()
+        setTradeFlash(tradeSide === 'bid' ? 'long' : 'short')
+        setTradeMsg(`🌊 SESSION MODE · Virtual PnL tracking (Pacifica account not whitelisted)`)
+        await submitTrade(action, orderId, tradeSymbol, tradeSide, tradeAmount, tradeLeverage, currentPrice)
+        return
+      }
+
+      // No agent → show signing modal (user approves each trade)
       setPendingSign({
         action,
         clientOrderId: clientOrderId ?? crypto.randomUUID(),
@@ -771,6 +787,27 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
     }
   }, [chat.length, rightTab])
 
+  // Detect liquidation events — close with loss >= 50% of margin
+  // Only process events we haven't seen before
+  useEffect(() => {
+    for (const ev of feed) {
+      if (ev.action !== 'close' || ev.pnl === undefined || seenLiqsRef.current.has(ev.id)) continue
+      seenLiqsRef.current.add(ev.id)
+      // Skip events older than 10s (prevents broadcast storm on initial load)
+      if (Date.now() - ev.timestamp > 10_000) continue
+      // Heuristic: loss >= 50% of implied margin = liquidation-level event
+      const margin = ev.leverage > 0 ? (ev.price * ev.amount) / ev.leverage : 0
+      if (ev.pnl < 0 && margin > 0 && Math.abs(ev.pnl) / margin >= 0.5) {
+        setLiqBroadcast({
+          id: ev.id,
+          displayName: ev.displayName,
+          symbol: ev.symbol,
+          loss: ev.pnl,
+        })
+      }
+    }
+  }, [feed])
+
   // Keyboard shortcuts — only fire when not typing, arena still active,
   // and user is a participant (spectators can still use help/escape)
   useKeyboard({
@@ -827,6 +864,30 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   }, [comp, prices, leaderboard])
 
   const myEntry = liveLeaderboard.find(e => e.userId === userId)
+
+  // Track rank deltas — detect when someone moves up or down
+  useEffect(() => {
+    const now = Date.now()
+    const updates: Record<string, { delta: number; ts: number }> = {}
+    for (const entry of liveLeaderboard) {
+      const prev = prevRanksRef.current[entry.userId]
+      if (prev !== undefined && prev !== entry.rank) {
+        updates[entry.userId] = { delta: prev - entry.rank, ts: now }  // positive = moved up
+      }
+      prevRanksRef.current[entry.userId] = entry.rank
+    }
+    if (Object.keys(updates).length > 0) {
+      setRankDeltas(prev => ({ ...prev, ...updates }))
+    }
+    // Expire old deltas (clean up after 3s)
+    setRankDeltas(prev => {
+      const filtered: typeof prev = {}
+      for (const [k, v] of Object.entries(prev)) {
+        if (now - v.ts < 3000) filtered[k] = v
+      }
+      return filtered
+    })
+  }, [liveLeaderboard])
   const myPositions: Position[] = comp?.participants?.[userId]?.positions ?? []
   const isEnded = comp?.status === 'ended'
   const isWaiting = comp?.status === 'waiting'
@@ -1180,6 +1241,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       {/* Ship Shop — pick ship emoji based on Tidal Points tier */}
       <ShipShop isOpen={shopOpen} onClose={() => setShopOpen(false)} userId={userId} />
 
+      {/* Liquidation broadcast — fires when any participant closes at >=50% loss */}
+      <LiquidationBroadcast liq={liqBroadcast} />
+
       {/* TESTNET signing modal — Privy wallet if connected, else server demo keypair */}
       <SigningModal
         isOpen={pendingSign !== null}
@@ -1270,40 +1334,20 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
               <Zap className="w-3 h-3" /> on-chain
             </span>
           )}
-          <span className="text-xs hidden lg:flex items-center gap-1 px-1.5 py-0.5 font-black"
-            style={{ border: '1px solid #000', background: 'var(--teal)', color: '#000', fontSize: '10px' }}
-            title="Orders routed with builder_code=tidalwars — earns builder rewards on Pacifica">
-            ⬡ BUILDER
-          </span>
-          <span className="text-xs hidden lg:flex items-center gap-1 px-1.5 py-0.5 font-black"
-            style={{ border: '1px solid #000', background: 'var(--border-soft)', color: 'var(--text-muted)', fontSize: '10px' }}
-            title="Trade events tracked via Fuul Events API">
-            FUUL
-          </span>
-          {/* Agent key — shown only when Privy wallet connected */}
+          {/* Agent key — Fast Trade button (only when Privy connected) */}
           {privy.ready && (
             <div className="hidden md:flex">
               <AgentKeyPanel agentKey={agentKey} />
             </div>
           )}
-          {/* Sound toggle — ocean-themed SFX on trades & achievements */}
-          <button onClick={toggleSound}
-            className="nb-btn nb-btn-ghost py-1 px-2"
-            title={soundOn ? 'Mute sound effects' : 'Enable sound effects (bubble pops, chimes, whale calls)'}>
-            {soundOn
-              ? <Volume2 className="w-3.5 h-3.5" style={{ color: 'var(--teal)' }} />
-              : <VolumeX className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />}
-          </button>
-          <button onClick={() => setShopOpen(true)}
-            className="nb-btn nb-btn-ghost py-1 px-2"
-            title="Ship Shop — customize your battle ship">
-            <span style={{ fontSize: '13px' }}>🛥️</span>
-          </button>
-          <button onClick={() => setHelpOpen(true)}
-            className="nb-btn nb-btn-ghost py-1 px-2 hidden md:flex"
-            title="Keyboard shortcuts (press ? anytime)">
-            <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 900 }}>?</span>
-          </button>
+          {/* Consolidated settings — replaces BUILDER/FUUL/sound/shop/? buttons */}
+          <ArenaSettings
+            soundOn={soundOn}
+            onToggleSound={toggleSound}
+            onOpenHelp={() => setHelpOpen(true)}
+            onOpenShop={() => setShopOpen(true)}
+            builderCode={BUILDER_CODE}
+          />
           <WalletButton />
         </div>
       </header>
@@ -1322,17 +1366,32 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             ) : (
               liveLeaderboard.map((entry, i) => {
                 const rank = oceanRank(entry.roi)
+                const delta = rankDeltas[entry.userId]
+                const deltaAge = delta ? (Date.now() - delta.ts) / 3000 : 1
+                const deltaOpacity = delta ? Math.max(0, 1 - deltaAge) : 0
                 return (
-                  <div key={entry.userId} className="px-3 py-2"
+                  <div key={entry.userId} className="px-3 py-2 transition-all"
                     style={{
                       borderBottom: '2px solid #000',
                       background: entry.userId === userId ? 'rgba(0,200,224,0.06)' : undefined,
                       borderLeft: entry.userId === userId ? '3px solid var(--teal)' : undefined,
                     }}>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-black text-xs w-4" style={{
-                        color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
-                      }}>#{entry.rank}</span>
+                      <div className="flex flex-col items-center" style={{ width: 20 }}>
+                        <span className="font-black text-xs" style={{
+                          color: i === 0 ? 'var(--gold)' : i === 1 ? '#9ca3af' : i === 2 ? '#b45309' : 'var(--text-muted)',
+                        }}>#{entry.rank}</span>
+                        {delta && deltaOpacity > 0 && (
+                          <span className="font-black tabular-nums" style={{
+                            color: delta.delta > 0 ? 'var(--profit)' : 'var(--loss)',
+                            fontSize: '8px',
+                            opacity: deltaOpacity,
+                            lineHeight: 1,
+                          }}>
+                            {delta.delta > 0 ? `▲${delta.delta}` : `▼${Math.abs(delta.delta)}`}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-base" title={rank.title}>{rank.emoji}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-bold truncate">{entry.displayName}</div>
