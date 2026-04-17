@@ -86,8 +86,22 @@ export default function TipModal({
 
         <div className="p-4">
           <div className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-            Gift points to <span className="font-black" style={{ color: 'var(--text)' }}>{toDisplayName}</span> to boost
-            their arena score. Winner gets more points to climb the captain ladder.
+            Back <span className="font-black" style={{ color: 'var(--text)' }}>{toDisplayName}</span> with Tidal Points.
+            If they place top-3, you get a kickback:
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 mb-3 text-xs" style={{ fontSize: '10px' }}>
+            <div className="p-1.5 text-center" style={{ background: 'rgba(255,215,0,0.08)', border: '1px solid var(--gold)' }}>
+              <div className="font-black" style={{ color: 'var(--gold)' }}>#1</div>
+              <div style={{ color: 'var(--text-muted)' }}>2.0× back</div>
+            </div>
+            <div className="p-1.5 text-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border-soft)' }}>
+              <div className="font-black" style={{ color: 'var(--text)' }}>#2</div>
+              <div style={{ color: 'var(--text-muted)' }}>1.5× back</div>
+            </div>
+            <div className="p-1.5 text-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border-soft)' }}>
+              <div className="font-black" style={{ color: 'var(--text)' }}>#3</div>
+              <div style={{ color: 'var(--text-muted)' }}>1.0× back</div>
+            </div>
           </div>
 
           {/* Balance */}

@@ -30,9 +30,17 @@ export interface TipEvent {
   timestamp: number
 }
 
+export interface SpenderBacking {
+  total: number                               // total points spent tipping in this arena
+  backed: Record<string, number>              // toUserId → amount tipped to them
+  displayName: string                         // cache tipper's display name for settle kickback UX
+}
+
 export interface TipState {
-  totals: Record<string, number>  // toUserId → cumulative tips received (points)
-  events: TipEvent[]              // capped at 50 most-recent
+  totals: Record<string, number>              // toUserId → cumulative tips received
+  bySpender: Record<string, SpenderBacking>   // fromUserId → their backing positions
+  events: TipEvent[]                          // capped at 50 most-recent
+  kickbackedAt?: number                       // set when settle credits kickbacks (prevent double-credit)
 }
 
 const CAP = 50
@@ -43,10 +51,11 @@ async function loadState(competitionId: string): Promise<TipState> {
   const cached = tipsMem.get(competitionId)
   if (cached) return cached
   const raw = await kget<unknown>(`tips:${competitionId}`)
-  let parsed: TipState = { totals: {}, events: [] }
+  let parsed: TipState = { totals: {}, bySpender: {}, events: [] }
   if (raw) {
     try {
       parsed = typeof raw === 'object' ? (raw as TipState) : (JSON.parse(raw as string) as TipState)
+      if (!parsed.bySpender) parsed.bySpender = {}  // migration for pre-kickback shape
     } catch { /* use empty */ }
   }
   tipsMem.set(competitionId, parsed)
@@ -96,9 +105,19 @@ export async function sendTip(params: {
   const nextFrom = { ...fromPoints, totalPoints: fromPoints.totalPoints - amount, updatedAt: Date.now() }
   await kset(`tidal_points:${params.fromUserId}`, JSON.stringify(nextFrom), 60 * 60 * 24 * 30)
 
-  // Credit recipient's arena tip total + record event
+  // Credit recipient's arena tip total + track spender's backing + record event
   const state = await loadState(params.competitionId)
   state.totals[params.toUserId] = (state.totals[params.toUserId] ?? 0) + amount
+
+  // Track the tipper's backing position — used at settle for kickback math
+  if (!state.bySpender[params.fromUserId]) {
+    state.bySpender[params.fromUserId] = { total: 0, backed: {}, displayName: params.fromDisplayName }
+  }
+  const spender = state.bySpender[params.fromUserId]
+  spender.total += amount
+  spender.backed[params.toUserId] = (spender.backed[params.toUserId] ?? 0) + amount
+  spender.displayName = params.fromDisplayName  // keep latest
+
   const event: TipEvent = {
     id: randomUUID(),
     competitionId: params.competitionId,
@@ -122,4 +141,54 @@ export async function sendTip(params: {
     newFromBalance: nextFrom.totalPoints,
     newToTotal: state.totals[params.toUserId],
   }
+}
+
+export interface KickbackResult {
+  tipperUserId: string
+  displayName: string
+  backedUserId: string
+  backedDisplayName: string
+  tipped: number
+  kickback: number
+  backedRank: number
+}
+
+/**
+ * At settle, iterate every tipper's backed positions. Award kickback based
+ * on the rank their backed trader finished at:
+ *   rank 1 → 2× tipped  (winner — massive backing payoff)
+ *   rank 2 → 1.5× tipped
+ *   rank 3 → 1× tipped  (break-even refund)
+ *   other → 0 (tip forfeit)
+ *
+ * Idempotent via state.kickbackedAt — second call returns [].
+ */
+export async function computeKickbacks(
+  competitionId: string,
+  finalRanks: Record<string, number>,          // userId → rank
+  participantNames: Record<string, string>,    // userId → displayName
+): Promise<KickbackResult[]> {
+  const state = await loadState(competitionId)
+  if (state.kickbackedAt) return []  // already processed
+
+  const results: KickbackResult[] = []
+  for (const [tipperUserId, spender] of Object.entries(state.bySpender)) {
+    for (const [backedUserId, tipped] of Object.entries(spender.backed)) {
+      const rank = finalRanks[backedUserId]
+      if (rank === undefined) continue
+      const mult = rank === 1 ? 2 : rank === 2 ? 1.5 : rank === 3 ? 1 : 0
+      const kickback = Math.floor(tipped * mult)
+      if (kickback > 0) {
+        results.push({
+          tipperUserId, displayName: spender.displayName,
+          backedUserId, backedDisplayName: participantNames[backedUserId] ?? backedUserId.slice(0, 6),
+          tipped, kickback, backedRank: rank,
+        })
+      }
+    }
+  }
+
+  state.kickbackedAt = Date.now()
+  await saveState(competitionId, state)
+  return results
 }

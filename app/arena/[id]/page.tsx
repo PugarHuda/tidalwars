@@ -536,6 +536,9 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const priceHistory = usePriceHistory(prices, symbol)
 
   const [pointsAwarded, setPointsAwarded] = useState<{ earned: number; totalPoints: number } | null>(null)
+  const [myKickbacks, setMyKickbacks] = useState<Array<{
+    backedDisplayName: string; tipped: number; kickback: number; backedRank: number
+  }>>([])
 
   const triggerSettle = useCallback(async (settlePrices: Record<string, number>) => {
     if (settled) return
@@ -550,6 +553,13 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
       const mine = (data.pointsAwards as { userId: string; earned: number; totalPoints: number }[] | undefined)
         ?.find(p => p.userId === userId)
       if (mine) setPointsAwarded({ earned: mine.earned, totalPoints: mine.totalPoints })
+
+      // Collect kickbacks for the current user (if they tipped someone who placed top-3)
+      const allKicks = (data.kickbacks as Array<{
+        tipperUserId: string; backedDisplayName: string; tipped: number; kickback: number; backedRank: number
+      }> | undefined) ?? []
+      const mineKicks = allKicks.filter(k => k.tipperUserId === userId)
+      if (mineKicks.length > 0) setMyKickbacks(mineKicks)
     } catch { /* ignore */ }
   }, [id, settled, userId])
 
@@ -1064,6 +1074,50 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               </div>
             )}
+
+            {/* Kickback receipts — fires when user tipped someone who placed top-3 */}
+            {myKickbacks.length > 0 && (() => {
+              const totalKickback = myKickbacks.reduce((s, k) => s + k.kickback, 0)
+              const totalTipped = myKickbacks.reduce((s, k) => s + k.tipped, 0)
+              const profit = totalKickback - totalTipped
+              return (
+                <div className="p-4 mb-4" style={{
+                  background: 'linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%)',
+                  border: '2px solid var(--gold)', boxShadow: '4px 4px 0px #000',
+                }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-black tracking-widest" style={{ color: 'var(--gold)' }}>
+                      🎁 BACKING PAYOUT
+                    </span>
+                    <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                      {profit >= 0 ? `+${profit}` : profit} net
+                    </span>
+                  </div>
+                  <div className="space-y-1 mb-2 text-xs">
+                    {myKickbacks.map((k, i) => (
+                      <div key={i} className="flex items-center justify-between"
+                        style={{ color: 'var(--text-muted)' }}>
+                        <span>
+                          Backed <span className="font-black" style={{ color: 'var(--text)' }}>{k.backedDisplayName}</span>
+                          <span style={{
+                            color: k.backedRank === 1 ? 'var(--gold)' : 'var(--text-dim)',
+                            marginLeft: 4, fontSize: '10px',
+                          }}>
+                            #{k.backedRank}
+                          </span>
+                        </span>
+                        <span className="font-mono font-black" style={{ color: 'var(--profit)' }}>
+                          {k.tipped} → +{k.kickback}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-xs pt-2" style={{ borderTop: '1px solid var(--border-soft)', color: 'var(--text-dim)', fontSize: '10px' }}>
+                    Top-3 kickback: 2× / 1.5× / 1× · picked a loser → 0 back
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Achievements gallery — show all unlocked badges this arena */}
             {unlocked.size > 0 && (

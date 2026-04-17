@@ -5,7 +5,8 @@ import {
 } from '@/lib/store'
 import { placeMarketOrder, closePosition, getDemoKeypair } from '@/lib/pacifica'
 import { trackTradeOpened, trackTradeClosed, trackCompetitionJoined, trackCompetitionWon } from '@/lib/fuul'
-import { addPointsResult } from '@/lib/points'
+import { addPointsResult, creditBonusPoints } from '@/lib/points'
+import { computeKickbacks } from '@/lib/tips'
 import { randomUUID } from 'crypto'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -52,7 +53,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const winner = comp.participants[final[0].userId]
       trackCompetitionWon({ userId: final[0].userId, walletAddress: winner?.walletAddress, pnl: final[0].totalPnl })
     }
-    return NextResponse.json({ settled: true, final, pointsAwards })
+
+    // Tipper kickbacks — backers of top-3 placers get tiered refunds
+    const finalRanks: Record<string, number> = {}
+    const participantNames: Record<string, string> = {}
+    for (const entry of final) {
+      finalRanks[entry.userId] = entry.rank
+      participantNames[entry.userId] = entry.displayName
+    }
+    const kickbacks = await computeKickbacks(id, finalRanks, participantNames)
+    const creditedKickbacks = await Promise.all(kickbacks.map(async k => {
+      const totals = await creditBonusPoints(k.tipperUserId, k.kickback, k.displayName)
+      return { ...k, newBalance: totals.totalPoints }
+    }))
+
+    return NextResponse.json({ settled: true, final, pointsAwards, kickbacks: creditedKickbacks })
   }
 
   // ── Trade ────────────────────────────────────────────────────────────────────

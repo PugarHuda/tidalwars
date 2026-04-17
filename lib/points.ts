@@ -94,6 +94,34 @@ export async function addPointsResult(params: {
   return { earned, totals: next }
 }
 
+/**
+ * Credit bonus points to a user — used for tip kickbacks and any other
+ * out-of-band point grants. Unlike addPointsResult, does NOT increment
+ * wins/arenasEntered (user isn't completing an arena).
+ */
+export async function creditBonusPoints(
+  userId: string,
+  amount: number,
+  displayName: string,
+): Promise<TidalPoints> {
+  const current = (await getPoints(userId)) ?? {
+    userId, displayName, walletAddress: undefined,
+    totalPoints: 0, wins: 0, runnerUps: 0, arenasEntered: 0,
+    bestRoi: 0, totalPnl: 0, updatedAt: Date.now(),
+  }
+  const next: TidalPoints = {
+    ...current,
+    displayName,
+    totalPoints: current.totalPoints + Math.floor(amount),
+    updatedAt: Date.now(),
+  }
+  await Promise.all([
+    kset(`${POINTS_KEY}:${userId}`, JSON.stringify(next), 60 * 60 * 24 * 30),
+    kzadd(LEADERBOARD_KEY, next.totalPoints, userId),
+  ])
+  return next
+}
+
 export async function getTopCaptains(limit = 10): Promise<TidalPoints[]> {
   const top = await kzrevrange(LEADERBOARD_KEY, 0, limit - 1)
   if (top.length === 0) return []

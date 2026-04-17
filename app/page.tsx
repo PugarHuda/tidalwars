@@ -31,6 +31,7 @@ export default function Home() {
   const [name, setName] = useState('')
   const [duration, setDuration] = useState(30)
   const [startDelay, setStartDelay] = useState(0)
+  const [showAllPast, setShowAllPast] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [creating, setCreating] = useState(false)
   const [globalStats, setGlobalStats] = useState<{ totalTraders: number; globalTrades: number; totalCompetitions: number } | null>(null)
@@ -301,19 +302,41 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Ended Competitions ───────────────────────────────────────────── */}
-        {ended.length > 0 && (
-          <div className="opacity-70">
-            <div className="text-sm font-black tracking-widest uppercase mb-4" style={{ color: 'var(--text-muted)' }}>
-              Past Competitions
+        {/* ── Ended Competitions (paginated — freshest 6 by default) ──────── */}
+        {ended.length > 0 && (() => {
+          const INITIAL = 6
+          const visible = showAllPast ? ended : ended.slice(0, INITIAL)
+          const hidden = ended.length - visible.length
+          return (
+            <div className="opacity-80">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm font-black tracking-widest uppercase"
+                  style={{ color: 'var(--text-muted)' }}>
+                  Past Arenas <span style={{ color: 'var(--text-dim)' }}>· {ended.length}</span>
+                </span>
+                {hidden > 0 && (
+                  <button onClick={() => setShowAllPast(true)}
+                    className="text-xs font-black tracking-wider"
+                    style={{ color: 'var(--teal)' }}>
+                    + SHOW {hidden} MORE
+                  </button>
+                )}
+                {showAllPast && ended.length > INITIAL && (
+                  <button onClick={() => setShowAllPast(false)}
+                    className="text-xs font-black tracking-wider"
+                    style={{ color: 'var(--text-muted)' }}>
+                    COLLAPSE
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {visible.map(comp => (
+                  <CompCard key={comp.id} comp={comp} onJoin={handleJoin} ended />
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {ended.map(comp => (
-                <CompCard key={comp.id} comp={comp} onJoin={handleJoin} ended />
-              ))}
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {active.length === 0 && ended.length === 0 && (
           <div className="nb-card p-16 text-center">
