@@ -9,6 +9,7 @@ import {
 import { Competition, LeaderboardEntry, TradeEvent, Position } from '@/lib/types'
 import WalletButton from '@/components/WalletButton'
 import SigningModal from '@/components/SigningModal'
+import ReplayModal from '@/components/ReplayModal'
 import { CandleChart } from '@/components/CandleChart'
 import { usePacificaWs } from '@/lib/pacificaWs'
 import type { TrendingToken } from '@/lib/elfa'
@@ -394,6 +395,7 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const [tradeMode, setTradeMode] = useState<'virtual' | 'testnet'>('virtual')
   const [chartView, setChartView] = useState<'chart' | 'tide'>('chart')
+  const [replayOpen, setReplayOpen] = useState(false)
   const [tradeFlash, setTradeFlash] = useState<'long' | 'short' | 'close' | null>(null)
   const [pendingSign, setPendingSign] = useState<{
     action: 'open' | 'close'
@@ -715,6 +717,13 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
   if (isEnded && displayWinner) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8" style={{ background: 'var(--bg)' }}>
+        <ReplayModal
+          isOpen={replayOpen}
+          onClose={() => setReplayOpen(false)}
+          comp={comp}
+          events={feed}
+          finalLeaderboard={liveLeaderboard}
+        />
         <div className="max-w-lg w-full">
           <div className="nb-card p-8 text-center mb-4" style={{ borderColor: 'var(--gold)', boxShadow: '6px 6px 0px #000' }}>
             <div className="text-6xl mb-3">🏆</div>
@@ -799,6 +808,11 @@ export default function ArenaPage({ params }: { params: Promise<{ id: string }> 
             </div>
           </div>
 
+          <div className="flex gap-3 mb-3">
+            <button onClick={() => setReplayOpen(true)} className="nb-btn nb-btn-ocean flex-1 py-3">
+              ⏪ REPLAY ARENA
+            </button>
+          </div>
           <div className="flex gap-3">
             <button onClick={() => router.push('/leaderboard')} className="nb-btn nb-btn-ghost flex-1 py-3">
               <Globe className="w-4 h-4" /> Hall of Fame
